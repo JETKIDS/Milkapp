@@ -1,0 +1,15 @@
+{
+  "name": "milk-app-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm -w backend run test",
+    "build": "npm -w backend run build"
+  }
+}
+
+

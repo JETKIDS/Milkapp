@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id               Int       @id @default(autoincrement())
+  name             String
+  address          String
+  phone            String?
+  email            String?
+  deliveryCourseId Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  deliveryCourse   DeliveryCourse? @relation(fields: [deliveryCourseId], references: [id])
+  orders           Order[]
+  schedules        DeliverySchedule[]
+  deliveryRecords  DeliveryRecord[]
+  contracts        CustomerProductContract[]
+  invoiceHistories InvoiceHistory[]
+  coursePositions  CustomerCoursePosition[]
+}
+
+
+model Manufacturer {
+  id          Int       @id @default(autoincrement())
+  name        String
+  contactInfo String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+}
+
+model Product {
+  id             Int          @id @default(autoincrement())
+  name           String
+  manufacturerId Int
+  price          Int
+  unit           String
+  description    String?
+  stock          Int          @default(99999)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+  orders         Order[]
+  contracts      CustomerProductContract[]
+}
+
+model DeliveryCourse {
+  id          Int        @id @default(autoincrement())
+  name        String
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  customers   Customer[]
+  coursePositions CustomerCoursePosition[]
+}
+
+model Order {
+  id          Int       @id @default(autoincrement())
+  customerId  Int
+  productId   Int
+  quantity    Int
+  unitPrice   Int
+  totalPrice  Int
+  orderDate   DateTime
+  deliveryDate DateTime?
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+  records     DeliveryRecord[]
+}
+
+model DeliverySchedule {
+  id          Int       @id @default(autoincrement())
+  customerId  Int
+  dayOfWeek   Int
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  customer    Customer  @relation(fields: [customerId], references: [id])
+}
+
+model DeliveryRecord {
+  id           Int       @id @default(autoincrement())
+  orderId      Int?
+  customerId   Int
+  deliveryDate DateTime
+  status       String
+  notes        String?
+  createdAt    DateTime  @default(now())
+
+  order        Order?    @relation(fields: [orderId], references: [id])
+  customer     Customer  @relation(fields: [customerId], references: [id])
+}
+
+model InvoiceHistory {
+  id                Int      @id @default(autoincrement())
+  customerId        Int
+  invoicePeriodStart DateTime
+  invoicePeriodEnd   DateTime
+  totalAmount       Int
+  issuedDate        DateTime
+  createdAt         DateTime @default(now())
+
+  customer          Customer @relation(fields: [customerId], references: [id])
+}
+
+model CustomerCoursePosition {
+  id               Int       @id @default(autoincrement())
+  customerId       Int
+  deliveryCourseId Int
+  position         Int
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  customer         Customer  @relation(fields: [customerId], references: [id])
+  deliveryCourse   DeliveryCourse @relation(fields: [deliveryCourseId], references: [id])
+
+  @@unique([customerId, deliveryCourseId])
+}
+
+model CustomerProductContract {
+  id          Int       @id @default(autoincrement())
+  customerId  Int
+  productId   Int
+  isActive    Boolean   @default(true)
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+  patterns    DeliveryPattern[]
+}
+
+model DeliveryPattern {
+  id          Int       @id @default(autoincrement())
+  contractId  Int
+  dayOfWeek   Int
+  quantity    Int
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  contract    CustomerProductContract @relation(fields: [contractId], references: [id])
+}
+

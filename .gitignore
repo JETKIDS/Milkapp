@@ -1,0 +1,23 @@
+# Node / TypeScript
+node_modules/
+*.log
+*.tsbuildinfo
+dist/
+coverage/
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+
+# Env/Secrets
+.env
+**/.env
+
+# Backend artifacts
+backend/prisma/dev.db
+backend/openapi.json
+
+# Frontend build
+frontend/dist/
+
+node_modules

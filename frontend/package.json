@@ -1,0 +1,29 @@
+{
+  "name": "milk-app-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 5173",
+    "gen:openapi": "npm --prefix ../backend run build:openapi && openapi-typescript ../backend/openapi.json -o src/types/openapi.d.ts"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.0",
+    "milk-app-backend": "file:../backend",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.0",
+    "react-router-dom": "^6.25.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "openapi-typescript": "^7.4.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}
