@@ -5,15 +5,32 @@ export interface ApiResponse<T> {
 	error?: { code: string; message: string; details?: unknown };
 }
 
+const API_BASE: string = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) ? (import.meta as any).env.VITE_API_BASE : '';
+
+function withBase(path: string): string {
+    // `path` は基本的に `/api/...` で渡される想定
+    if (!API_BASE) return path;
+    if (API_BASE.endsWith('/') && path.startsWith('/')) return API_BASE + path.slice(1);
+    return API_BASE + path;
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-	const res = await fetch(path);
+	const res = await fetch(withBase(path));
 	const json = (await res.json()) as ApiResponse<T>;
 	if (!res.ok || !json.success) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
 	return json.data as T;
 }
 
+export async function apiGetWithHeaders<T>(path: string): Promise<{ data: T; total?: number }> {
+	const res = await fetch(withBase(path));
+	const json = (await res.json()) as ApiResponse<T>;
+	if (!res.ok || !json.success) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
+	const totalHeader = res.headers.get('X-Total-Count') || res.headers.get('x-total-count');
+	return { data: json.data as T, total: totalHeader ? Number(totalHeader) : undefined };
+}
+
 export async function apiJson<TReq, TRes>(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: TReq): Promise<TRes> {
-	const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+	const res = await fetch(withBase(path), { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
 	if (method === 'DELETE') return undefined as unknown as TRes;
 	const json = (await res.json()) as ApiResponse<TRes>;
 	if (!res.ok || !json.success) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
@@ -21,7 +38,7 @@ export async function apiJson<TReq, TRes>(path: string, method: 'POST' | 'PUT' |
 }
 
 export async function postPdf(path: string, body: unknown): Promise<Blob> {
-	const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+	const res = await fetch(withBase(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 	if (!res.ok) throw new Error(`Request failed: ${res.status}`);
 	return await res.blob();
 }

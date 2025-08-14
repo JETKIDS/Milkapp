@@ -1,9 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.errorHandler = errorHandler;
+const logger_1 = require("../lib/logger");
 const zod_1 = require("zod");
 const client_1 = require("@prisma/client");
 function errorHandler(err, _req, res, _next) {
+    try {
+        logger_1.logger.error(err);
+    }
+    catch { }
     if (err instanceof zod_1.ZodError) {
         return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: '入力が不正です', details: err.issues } });
     }
@@ -31,5 +36,5 @@ function errorHandler(err, _req, res, _next) {
             return res.status(hit.status).json({ success: false, error: { code: err.code, message: hit.message } });
     }
     // fallback
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: '予期しないエラーが発生しました' } });
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err?.message || '予期しないエラーが発生しました' } });
 }

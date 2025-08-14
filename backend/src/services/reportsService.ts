@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { reportsRepository } from '../repositories/reportsRepository';
+import { generateSimplePdf, generateTablePdf } from '../pdf/pdfUtil';
 
 export const listFilterSchema = z.object({
   startDate: z.string().datetime().optional(),

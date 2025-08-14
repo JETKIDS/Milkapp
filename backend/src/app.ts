@@ -19,7 +19,10 @@ import { generateOpenApiDocument } from './openapi/schema';
 
 const app = express();
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  exposedHeaders: ['X-Total-Count']
+}));
 app.use(express.json());
 app.use(httpLogger);
 

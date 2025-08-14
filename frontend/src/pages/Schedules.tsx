@@ -3,11 +3,14 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FormSelect } from '../components/FormSelect';
-import { apiGet, apiJson } from '../lib/api';
+import { apiGet, apiJson, apiGetWithHeaders } from '../lib/api';
 import { getDataTyped, postDataTyped } from '../lib/typedApi';
 import { paginate, sortBy, SortDir } from '../lib/paging';
 import { Pagination } from '../components/Pagination';
 import { useSearchParams } from 'react-router-dom';
+import { Modal } from '../components/Modal';
+import { putDataTyped } from '../lib/typedApi';
+import { useToast } from '../components/Toast';
 
 const schema = z.object({
 	customerId: z.coerce.number().int().positive({ message: '必須です' }),
@@ -27,6 +30,7 @@ const days = [
 
 export function SchedulesPage() {
 	const [items, setItems] = React.useState<any[]>([]);
+    const toast = useToast();
     const [sp, setSp] = useSearchParams();
     const [sortKey, setSortKey] = React.useState<'id'|'customerId'|'dayOfWeek'>((sp.get('sortKey') as any) ?? 'id');
     const [sortDir, setSortDir] = React.useState<SortDir>((sp.get('sortDir') as SortDir) ?? 'asc');
@@ -34,12 +38,19 @@ export function SchedulesPage() {
 	const [pageSize] = React.useState(10);
 	const [customers, setCustomers] = React.useState<any[]>([]);
 	const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema) });
+    const eForm = useForm<FormValues>({ resolver: zodResolver(schema) });
+    const [editOpen, setEditOpen] = React.useState(false);
+    const [editing, setEditing] = React.useState<any | null>(null);
 
+    const [totalCount, setTotalCount] = React.useState<number | undefined>(undefined);
     const load = async () => {
-        setItems(await getDataTyped<any[]>('/api/schedules'));
+        const qs = new URLSearchParams({ sortKey, sortDir, page: String(page), pageSize: String(pageSize) }).toString();
+        const { data, total } = await apiGetWithHeaders<any[]>(`/api/schedules?${qs}`);
+        setItems(data);
+        setTotalCount(total);
         setCustomers(await getDataTyped<any[]>('/api/customers'));
     };
-	React.useEffect(() => { void load(); }, []);
+	React.useEffect(() => { void load(); }, [sortKey, sortDir, page]);
     React.useEffect(() => {
         const next = new URLSearchParams(sp);
         next.set('sortKey', sortKey);
@@ -48,8 +59,14 @@ export function SchedulesPage() {
         setSp(next, { replace: true });
     }, [sortKey, sortDir, page]);
 
-    const onSubmit = async (v: FormValues) => { await postDataTyped<typeof v, any>('/api/schedules', v); reset(); await load(); };
-    const complete = async (id: number) => { await postDataTyped<{ date: string }, any>(`/api/schedules/complete/${id}`, { date: new Date().toISOString() }); await load(); };
+    const onSubmit = async (v: FormValues) => {
+        try { await postDataTyped<typeof v, any>('/api/schedules', v); toast.notify('success','スケジュールを作成しました'); reset(); await load(); }
+        catch { toast.notify('error','スケジュールの作成に失敗しました'); }
+    };
+    const complete = async (id: number) => {
+        try { await postDataTyped<{ date: string }, any>(`/api/schedules/complete/${id}`, { date: new Date().toISOString() }); toast.notify('success','完了にしました'); await load(); }
+        catch { toast.notify('error','完了処理に失敗しました'); }
+    };
 
 	return (
 		<div className="card">
@@ -60,8 +77,11 @@ export function SchedulesPage() {
 				<div><button type="submit" disabled={isSubmitting}>作成</button></div>
 			</form>
 			{(() => {
-				const sorted = sortBy(items, (x:any)=>x[sortKey], sortDir);
-				const { items: rows, total, totalPages, currentPage } = paginate(sorted, page, pageSize);
+                const sorted = sortBy(items, (x:any)=>x[sortKey], sortDir);
+                const rows = sorted;
+                const total = totalCount ?? rows.length;
+                const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                const currentPage = page;
 				const onSort = (key: typeof sortKey) => { if (sortKey === key) setSortDir(sortDir==='asc'?'desc':'asc'); else { setSortKey(key); setSortDir('asc'); } };
 				return (
 					<>
@@ -69,7 +89,7 @@ export function SchedulesPage() {
 							<thead><tr><th onClick={()=>onSort('id')}>ID</th><th onClick={()=>onSort('customerId')}>顧客</th><th onClick={()=>onSort('dayOfWeek')}>曜日</th><th>操作</th></tr></thead>
 							<tbody>
 								{rows.map((s:any)=>(
-									<tr key={s.id}><td>{s.id}</td><td>{s.customerId}</td><td>{s.dayOfWeek}</td><td><button className="secondary" onClick={()=>complete(s.id)}>完了</button></td></tr>
+                                    <tr key={s.id}><td>{s.id}</td><td>{s.customerId}</td><td>{s.dayOfWeek}</td><td style={{ display: 'flex', gap: 8 }}><button className="ghost" onClick={()=>{ setEditing(s); eForm.reset({ customerId: s.customerId, dayOfWeek: s.dayOfWeek }); setEditOpen(true); }}>編集</button><button className="secondary" onClick={()=>complete(s.id)}>完了</button></td></tr>
 								))}
 							</tbody>
 						</table>
@@ -80,6 +100,16 @@ export function SchedulesPage() {
 					</>
 				);
 			})()}
+            <Modal open={editOpen} title={editing ? `スケジュール編集 #${editing.id}` : ''} onClose={()=>{ setEditOpen(false); setEditing(null); }}>
+                <form onSubmit={eForm.handleSubmit(async v => {
+                    if (!editing) return;
+                    try { await putDataTyped(`/api/schedules/${editing.id}`, { customerId: editing.customerId, dayOfWeek: v.dayOfWeek }); toast.notify('success','スケジュールを更新しました'); setEditOpen(false); setEditing(null); await load(); }
+                    catch { toast.notify('error','スケジュールの更新に失敗しました'); }
+                })} style={{ display: 'grid', gap: 8 }}>
+                    <FormSelect label="曜日" {...eForm.register('dayOfWeek')} error={eForm.formState.errors.dayOfWeek} options={days} />
+                    <div><button type="submit">更新</button></div>
+                </form>
+            </Modal>
 		</div>
 	);
 }

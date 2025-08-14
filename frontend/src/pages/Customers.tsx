@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { FormTextField } from '../components/FormTextField';
 import { apiGet, apiJson } from '../lib/api';
 import { getDataTyped, postDataTyped, deleteVoid, putDataTyped } from '../lib/typedApi';
+import { apiGetWithHeaders } from '../lib/api';
 import { Modal } from '../components/Modal';
 import { paginate, sortBy, SortDir } from '../lib/paging';
 import { Pagination } from '../components/Pagination';
@@ -29,20 +30,27 @@ export function CustomersPage() {
     const [sortDir, setSortDir] = React.useState<SortDir>((sp.get('sortDir') as SortDir) ?? 'asc');
     const [page, setPage] = React.useState(Number(sp.get('page') ?? '1'));
 	const [pageSize] = React.useState(10);
-	const [loading, setLoading] = React.useState(false);
+    const [loading, setLoading] = React.useState(false);
+    const [totalCount, setTotalCount] = React.useState<number | undefined>(undefined);
     const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema) });
     const eForm = useForm<FormValues>({ resolver: zodResolver(schema) });
     const [editOpen, setEditOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<any | null>(null);
 
+    const qDebounced = useDebounce(q, 300);
+
     const load = async () => {
 		setLoading(true);
-        try { setItems(await getDataTyped<any[]>('/api/customers')); }
+        try {
+            const qs = new URLSearchParams({ q: qDebounced, sortKey, sortDir, page: String(page), pageSize: String(pageSize) }).toString();
+            const { data, total } = await apiGetWithHeaders<any[]>(`/api/customers?${qs}`);
+            setItems(data);
+            setTotalCount(total);
+        }
 		catch { toast.notify('error', '顧客の取得に失敗しました'); }
 		finally { setLoading(false); }
 	};
-	React.useEffect(() => { void load(); }, []);
-    const qDebounced = useDebounce(q, 300);
+	React.useEffect(() => { void load(); }, [qDebounced, sortKey, sortDir, page]);
     React.useEffect(() => {
         const next = new URLSearchParams(sp);
         next.set('q', qDebounced);
@@ -79,9 +87,10 @@ export function CustomersPage() {
 				<div><button type="submit" disabled={isSubmitting}>作成</button></div>
 			</form>
 			{(() => {
-				const filtered = items.filter(c=>[c.name,c.address].join(' ').includes(q));
-				const sorted = sortBy(filtered, (x:any)=>x[sortKey], sortDir);
-				const { items: rows, total, totalPages, currentPage } = paginate(sorted, page, pageSize);
+                const rows = items;
+                const total = totalCount ?? rows.length;
+                const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                const currentPage = page;
                 const onSort = (key: 'id'|'name'|'address') => {
 					if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('asc'); }
 				};
@@ -110,10 +119,10 @@ export function CustomersPage() {
 								))}
 							</tbody>
 						</table>
-						<div className="toolbar" style={{ marginTop: 12 }}>
-							<div>全{total}件</div>
-							<Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
-						</div>
+                        <div className="toolbar" style={{ marginTop: 12 }}>
+                            <div>全{total}件</div>
+                            <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+                        </div>
 					</>
 				);
 			})()}

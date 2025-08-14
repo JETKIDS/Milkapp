@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { FormTextField } from '../components/FormTextField';
 import { apiGet, apiJson } from '../lib/api';
 import { getDataTyped, postDataTyped, deleteVoid } from '../lib/typedApi';
+import { apiGetWithHeaders } from '../lib/api';
 import { paginate, sortBy, SortDir } from '../lib/paging';
 import { Pagination } from '../components/Pagination';
 import { useToast } from '../components/Toast';
@@ -32,9 +33,10 @@ export function ManufacturersPage() {
     const [editing, setEditing] = React.useState<any | null>(null);
 
     const [loading, setLoading] = React.useState(false);
-    const load = async () => { setLoading(true); try { setItems(await getDataTyped<any[]>('/api/manufacturers')); } catch { toast.notify('error', 'メーカー取得に失敗'); } finally { setLoading(false); } };
-	React.useEffect(() => { void load(); }, []);
+    const [totalCount, setTotalCount] = React.useState<number | undefined>(undefined);
     const qDebounced = useDebounce(q, 300);
+    const load = async () => { setLoading(true); try { const qs = new URLSearchParams({ q: qDebounced, sortKey, sortDir, page: String(page), pageSize: String(pageSize) }).toString(); const { data, total } = await apiGetWithHeaders<any[]>(`/api/manufacturers?${qs}`); setItems(data); setTotalCount(total); } catch { toast.notify('error', 'メーカー取得に失敗'); } finally { setLoading(false); } };
+	React.useEffect(() => { void load(); }, [qDebounced, sortKey, sortDir, page]);
     React.useEffect(() => {
         const next = new URLSearchParams(sp);
         next.set('q', qDebounced);
@@ -59,9 +61,10 @@ export function ManufacturersPage() {
 				<div><button type="submit" disabled={isSubmitting}>作成</button></div>
 			</form>
 			{(() => {
-				const filtered = items.filter((m:any)=>String(m.name).includes(q));
-				const sorted = sortBy(filtered, (x:any)=>x[sortKey], sortDir);
-				const { items: rows, total, totalPages, currentPage } = paginate(sorted, page, pageSize);
+                const rows = items;
+                const total = totalCount ?? rows.length;
+                const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                const currentPage = page;
 				const onSort = (key: 'id'|'name') => { if (sortKey === key) setSortDir(sortDir==='asc'?'desc':'asc'); else { setSortKey(key); setSortDir('asc'); } };
 				return (
 					<>

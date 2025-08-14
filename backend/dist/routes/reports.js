@@ -7,8 +7,9 @@ const router = (0, express_1.Router)();
 router.post('/delivery-list', async (req, res, next) => {
     try {
         const items = await reportsService_1.reportsService.deliveryList(req.body);
-        const lines = items.map((c) => `顧客:${c.name} 住所:${c.address} コース:${c.deliveryCourse?.name ?? '-'} `);
-        const pdf = await (0, pdfUtil_1.generateSimplePdf)('配達リスト', lines);
+        const headers = ['顧客', '住所', 'コース'];
+        const rows = items.map((c) => [c.name, c.address, c.deliveryCourse?.name ?? '-']);
+        const pdf = await (0, pdfUtil_1.generateTablePdf)('配達リスト', headers, rows);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', pdf.length);
         res.status(200).send(pdf);
@@ -20,8 +21,9 @@ router.post('/delivery-list', async (req, res, next) => {
 router.post('/product-list', async (req, res, next) => {
     try {
         const items = await reportsService_1.reportsService.productList(req.body);
-        const lines = items.map((p) => `商品:${p.name} メーカー:${p.manufacturer?.name ?? '-'} 価格:${p.price}`);
-        const pdf = await (0, pdfUtil_1.generateSimplePdf)('商品リスト', lines);
+        const headers = ['商品', 'メーカー', '価格'];
+        const rows = items.map((p) => [p.name, p.manufacturer?.name ?? '-', String(p.price)]);
+        const pdf = await (0, pdfUtil_1.generateTablePdf)('商品リスト', headers, rows);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', pdf.length);
         res.status(200).send(pdf);

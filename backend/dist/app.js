@@ -56,7 +56,10 @@ const docs_1 = __importDefault(require("./routes/docs"));
 const schema_1 = require("./openapi/schema");
 const app = (0, express_1.default)();
 app.use((0, helmet_1.default)());
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: '*',
+    exposedHeaders: ['X-Total-Count']
+}));
 app.use(express_1.default.json());
 app.use(logger_1.httpLogger);
 app.get('/health', (_req, res) => {

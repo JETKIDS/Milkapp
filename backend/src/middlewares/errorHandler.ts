@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
+import { logger } from '../lib/logger';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 
 export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
+  try { logger.error(err); } catch {}
   if (err instanceof ZodError) {
     return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: '入力が不正です', details: err.issues } });
   }
@@ -31,7 +33,7 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
   }
 
   // fallback
-  res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: '予期しないエラーが発生しました' } });
+  res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err?.message || '予期しないエラーが発生しました' } });
 }
 
 

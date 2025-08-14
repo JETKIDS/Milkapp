@@ -3,10 +3,23 @@ import { customersService } from '../services/customersService';
 
 const router = Router();
 
-router.get('/', async (_req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
-    const customers = await customersService.list();
-    res.json({ success: true, data: customers });
+    const { q, page, pageSize, sortKey, sortDir } = req.query as any;
+    const p = Number(page) || 1;
+    const ps = Math.min(Number(pageSize) || 10, 100);
+    const where: any = q ? { OR: [
+      { name: { contains: String(q) } },
+      { address: { contains: String(q) } },
+    ] } : {};
+    const orderBy = sortKey ? { [String(sortKey)]: (String(sortDir) === 'desc' ? 'desc' : 'asc') } : { id: 'asc' } as any;
+    const prisma = (await import('../lib/prisma')).default;
+    const [total, items] = await Promise.all([
+      prisma.customer.count({ where }),
+      prisma.customer.findMany({ where, orderBy, skip: (p - 1) * ps, take: ps }),
+    ]);
+    res.setHeader('X-Total-Count', String(total));
+    res.json({ success: true, data: items });
   } catch (err) {
     next(err);
   }
