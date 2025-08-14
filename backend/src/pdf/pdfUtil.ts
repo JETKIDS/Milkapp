@@ -1,39 +1,68 @@
 import PDFDocument from 'pdfkit';
+import fontkit from 'fontkit';
 import fs from 'fs';
 import path from 'path';
 
-function getJapaneseFontPath(): string | null {
-  const candidates = [
-    // Windows system fonts (common Japanese fonts)
-    'C:/Windows/Fonts/YuGothR.ttc',
-    'C:/Windows/Fonts/YuGothM.ttc',
-    'C:/Windows/Fonts/meiryo.ttc',
-    'C:/Windows/Fonts/msgothic.ttc',
-    path.join(__dirname, 'fonts', 'NotoSansJP-Regular.ttf'),
-    path.join(__dirname, '..', 'pdf', 'fonts', 'NotoSansJP-Regular.ttf'),
-    path.join(process.cwd(), 'backend', 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.ttf'),
-    path.join(process.cwd(), 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.ttf'),
-    // OTF fallback
-    path.join(__dirname, 'fonts', 'NotoSansJP-Regular.otf'),
-    path.join(__dirname, '..', 'pdf', 'fonts', 'NotoSansJP-Regular.otf'),
-    path.join(process.cwd(), 'backend', 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.otf'),
-    path.join(process.cwd(), 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.otf'),
+type FontCandidate = { path: string; postscriptName?: string };
+
+function getJapaneseFontCandidates(): FontCandidate[] {
+  const p = (...segs: string[]) => path.join(...segs);
+  const list: FontCandidate[] = [
+    // Windows system fonts (TTC)
+    { path: 'C:/Windows/Fonts/YuGothR.ttc', postscriptName: 'YuGothic-Regular' },
+    { path: 'C:/Windows/Fonts/YuGothM.ttc', postscriptName: 'YuGothic-Medium' },
+    { path: 'C:/Windows/Fonts/meiryo.ttc', postscriptName: 'Meiryo' },
+    { path: 'C:/Windows/Fonts/msgothic.ttc', postscriptName: 'MS-Gothic' },
+    // Project bundled fonts (prefer TTF/OTF)
+    { path: p(__dirname, 'fonts', 'NotoSansJP-Regular.ttf') },
+    { path: p(__dirname, '..', 'pdf', 'fonts', 'NotoSansJP-Regular.ttf') },
+    { path: p(process.cwd(), 'backend', 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.ttf') },
+    { path: p(process.cwd(), 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.ttf') },
+    { path: p(__dirname, 'fonts', 'NotoSansJP-Regular.otf') },
+    { path: p(__dirname, '..', 'pdf', 'fonts', 'NotoSansJP-Regular.otf') },
+    { path: p(process.cwd(), 'backend', 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.otf') },
+    { path: p(process.cwd(), 'src', 'pdf', 'fonts', 'NotoSansJP-Regular.otf') },
   ];
-  for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p; } catch {}
+  return list.filter(c => {
+    try { return fs.existsSync(c.path); } catch { return false; }
+  });
+}
+
+function tryRegisterJapaneseFont(doc: any): boolean {
+  const candidates = getJapaneseFontCandidates();
+  for (const c of candidates) {
+    try {
+      if (c.path.toLowerCase().endsWith('.ttc') && c.postscriptName) {
+        // Let pdfkit/fontkit choose specific face from TTC by PostScript name
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (doc as any).registerFont('jp', c.path, c.postscriptName);
+      } else if (c.path.toLowerCase().endsWith('.ttf') || c.path.toLowerCase().endsWith('.otf')) {
+        doc.registerFont('jp', c.path);
+      } else {
+        continue;
+      }
+      doc.font('jp');
+      return true;
+    } catch {
+      // try next
+    }
   }
-  return null;
+  return false;
 }
 
 export function generateSimplePdf(title: string, lines: string[]): Promise<Buffer> {
   return new Promise((resolve) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    // Enable fontkit to support TTC/OTF/TTF
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).registerFontkit?.(fontkit);
     const chunks: Uint8Array[] = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks.map((u) => Buffer.from(u)))));
 
-    const jp = getJapaneseFontPath();
-    try { if (jp) doc.font(jp); else doc.font('Helvetica'); } catch { doc.font('Helvetica'); }
+    if (!tryRegisterJapaneseFont(doc)) {
+      doc.font('Helvetica');
+    }
     doc.fontSize(18).text(title, { underline: true });
     doc.moveDown();
     doc.fontSize(12);
@@ -46,12 +75,16 @@ export function generateSimplePdf(title: string, lines: string[]): Promise<Buffe
 export function generateTablePdf(title: string, headers: string[], rows: string[][]): Promise<Buffer> {
   return new Promise((resolve) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    // Enable fontkit to support TTC/OTF/TTF
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).registerFontkit?.(fontkit);
     const chunks: Uint8Array[] = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks.map((u) => Buffer.from(u)))));
 
-    const jp = getJapaneseFontPath();
-    try { if (jp) doc.font(jp); else doc.font('Helvetica'); } catch { doc.font('Helvetica'); }
+    if (!tryRegisterJapaneseFont(doc)) {
+      doc.font('Helvetica');
+    }
 
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     // 列幅: 3列（左/中央/右）想定を最適化
@@ -72,7 +105,7 @@ export function generateTablePdf(title: string, headers: string[], rows: string[
     doc.save();
     doc.rect(doc.page.margins.left, y, pageWidth, 22).fill('#f1f5f9');
     doc.restore();
-    try { if (jp) doc.font(jp); else doc.font('Helvetica'); } catch { doc.font('Helvetica'); }
+    // font already set
     x = doc.x;
     for (let i = 0; i < headers.length; i++) {
       doc.text(headers[i], x + padding, y + 6, { width: colWidths[i] - padding * 2 });
@@ -83,7 +116,6 @@ export function generateTablePdf(title: string, headers: string[], rows: string[
     y += 4;
 
     // 行
-    try { if (jp) doc.font(jp); else doc.font('Helvetica'); } catch { doc.font('Helvetica'); }
     const isNumeric = (s: any) => typeof s === 'number' || (typeof s === 'string' && /^[-+]?\d{1,3}(,\d{3})*(\.\d+)?$/.test(s));
     for (const row of rows) {
       // ページ末尾近くなら改ページ
@@ -92,7 +124,7 @@ export function generateTablePdf(title: string, headers: string[], rows: string[
         y = doc.y;
         // 再度ヘッダー
         x = doc.x;
-        try { if (jp) doc.font(jp); else doc.font('Helvetica'); } catch { doc.font('Helvetica'); }
+        // font already set
         doc.save();
         doc.rect(doc.page.margins.left, y, pageWidth, 22).fill('#f1f5f9');
         doc.restore();
@@ -104,7 +136,7 @@ export function generateTablePdf(title: string, headers: string[], rows: string[
         y += 22;
         doc.moveTo(doc.page.margins.left, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#cbd5e1').stroke();
         y += 4;
-        try { if (jp) doc.font(jp); else doc.font('Helvetica'); } catch { doc.font('Helvetica'); }
+    // font already set
       }
 
       // 各セルの高さを計算

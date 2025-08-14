@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateSimplePdf = generateSimplePdf;
 exports.generateTablePdf = generateTablePdf;
 const pdfkit_1 = __importDefault(require("pdfkit"));
+const fontkit_1 = __importDefault(require("fontkit"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 function getJapaneseFontPath() {
@@ -37,15 +38,22 @@ function getJapaneseFontPath() {
 function generateSimplePdf(title, lines) {
     return new Promise((resolve) => {
         const doc = new pdfkit_1.default({ size: 'A4', margin: 40 });
+        // Enable fontkit to support TTC/OTF/TTF
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        doc.registerFontkit?.(fontkit_1.default);
         const chunks = [];
         doc.on('data', (c) => chunks.push(c));
         doc.on('end', () => resolve(Buffer.concat(chunks.map((u) => Buffer.from(u)))));
         const jp = getJapaneseFontPath();
         try {
-            if (jp)
-                doc.font(jp);
-            else
+            if (jp) {
+                const buf = fs_1.default.readFileSync(jp);
+                doc.registerFont('jp', buf);
+                doc.font('jp');
+            }
+            else {
                 doc.font('Helvetica');
+            }
         }
         catch {
             doc.font('Helvetica');
@@ -61,15 +69,22 @@ function generateSimplePdf(title, lines) {
 function generateTablePdf(title, headers, rows) {
     return new Promise((resolve) => {
         const doc = new pdfkit_1.default({ size: 'A4', margin: 40 });
+        // Enable fontkit to support TTC/OTF/TTF
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        doc.registerFontkit?.(fontkit_1.default);
         const chunks = [];
         doc.on('data', (c) => chunks.push(c));
         doc.on('end', () => resolve(Buffer.concat(chunks.map((u) => Buffer.from(u)))));
         const jp = getJapaneseFontPath();
         try {
-            if (jp)
-                doc.font(jp);
-            else
+            if (jp) {
+                const buf = fs_1.default.readFileSync(jp);
+                doc.registerFont('jp', buf);
+                doc.font('jp');
+            }
+            else {
                 doc.font('Helvetica');
+            }
         }
         catch {
             doc.font('Helvetica');
@@ -92,7 +107,7 @@ function generateTablePdf(title, headers, rows) {
         doc.restore();
         try {
             if (jp)
-                doc.font(jp);
+                doc.font('jp');
             else
                 doc.font('Helvetica');
         }
@@ -127,7 +142,7 @@ function generateTablePdf(title, headers, rows) {
                 x = doc.x;
                 try {
                     if (jp)
-                        doc.font(jp);
+                        doc.font('jp');
                     else
                         doc.font('Helvetica');
                 }
@@ -147,7 +162,7 @@ function generateTablePdf(title, headers, rows) {
                 y += 4;
                 try {
                     if (jp)
-                        doc.font(jp);
+                        doc.font('jp');
                     else
                         doc.font('Helvetica');
                 }
