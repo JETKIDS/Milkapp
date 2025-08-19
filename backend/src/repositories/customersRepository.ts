@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma';
 
 export interface CreateCustomerInput {
+  id?: number;
   name: string;
   address: string;
   phone?: string;

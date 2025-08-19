@@ -111,7 +111,7 @@ export function ReportsPage() {
 
 	return (
 		<div className="card">
-			<div className="toolbar"><h2 style={{ margin: 0 }}>Reports</h2></div>
+			<div className="toolbar"><h2 style={{ margin: 0 }}>📈 レポート</h2></div>
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 				<div>
 					<h3>配達リスト</h3>

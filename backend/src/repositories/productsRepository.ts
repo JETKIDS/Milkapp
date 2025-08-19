@@ -1,11 +1,13 @@
 import prisma from '../lib/prisma';
 
 export interface CreateProductInput {
+  id?: number;
   name: string;
   manufacturerId: number;
   price: number;
   unit: string;
   description?: string;
+  stock?: number;
 }
 
 export interface UpdateProductInput extends Partial<CreateProductInput> {}

@@ -5,13 +5,41 @@ const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const { q, page, pageSize, sortKey, sortDir } = req.query as any;
+    const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir } = req.query as any;
     const p = Number(page) || 1;
     const ps = Math.min(Number(pageSize) || 10, 100);
-    const where: any = q ? { OR: [
-      { name: { contains: String(q) } },
-      { address: { contains: String(q) } },
-    ] } : {};
+    
+    let where: any = {};
+    const conditions: any[] = [];
+    
+    // ID検索
+    if (idSearch) {
+      const idNum = parseInt(String(idSearch));
+      if (!isNaN(idNum)) {
+        conditions.push({ id: idNum });
+      }
+    }
+    
+    // 名前検索
+    if (nameSearch) {
+      conditions.push({ name: { contains: String(nameSearch) } });
+    }
+    
+    // 電話番号検索
+    if (phoneSearch) {
+      conditions.push({ phone: { contains: String(phoneSearch) } });
+    }
+    
+    // 住所検索
+    if (addressSearch) {
+      conditions.push({ address: { contains: String(addressSearch) } });
+    }
+    
+    // 複数の検索条件がある場合はAND条件で結合
+    if (conditions.length > 0) {
+      where = { AND: conditions };
+    }
+    
     const orderBy = sortKey ? { [String(sortKey)]: (String(sortDir) === 'desc' ? 'desc' : 'asc') } : { id: 'asc' } as any;
     const prisma = (await import('../lib/prisma')).default;
     const [total, items] = await Promise.all([

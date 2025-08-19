@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { deliveryCoursesRepository } from '../repositories/deliveryCoursesRepository';
 
 export const deliveryCourseCreateSchema = z.object({
+  id: z.number().int().positive().optional(),
   name: z.string().min(1),
   description: z.string().optional(),
 });

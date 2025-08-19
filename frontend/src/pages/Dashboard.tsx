@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiGet } from '../lib/api';
 import { useToast } from '../components/Toast';
 
@@ -7,6 +8,7 @@ const yen = (n: number) => new Intl.NumberFormat('ja-JP', { style: 'currency', c
 
 export function DashboardPage() {
 	const toast = useToast();
+	const nav = useNavigate();
 	const [today, setToday] = React.useState<any>(null);
 	const [pending, setPending] = React.useState<any[]>([]);
 	const [status, setStatus] = React.useState<any[]>([]);
@@ -56,8 +58,8 @@ export function DashboardPage() {
 					<table>
 						<thead><tr><th>顧客</th><th>住所</th><th>コース</th></tr></thead>
 						<tbody>
-							{pending.map((x:any)=> (
-								<tr key={x.customerId}><td>{x.name}</td><td>{x.address}</td><td>{courseName(x.courseId)}</td></tr>
+							{pending.map((x:any, i:number)=> (
+								<tr key={`${x.customerId}-${i}`} className="clickable" onClick={()=>nav(`/customers/${x.customerId}/detail`)}><td>{x.name}</td><td>{x.address}</td><td>{courseName(x.courseId)}</td></tr>
 							))}
 							{pending.length === 0 && <tr><td colSpan={3}>未完了はありません</td></tr>}
 						</tbody>
@@ -70,7 +72,7 @@ export function DashboardPage() {
 						<tbody>
 							{status.map((s:any)=> {
 								const rate = s.total ? Math.round((s.completed / s.total) * 100) : 0;
-								return <tr key={s.courseId}><td>{s.courseName}</td><td>{s.total}</td><td>{s.completed}</td><td>{s.pending}</td><td>{rate}%</td></tr>;
+								return <tr key={`${s.courseId}-${rate}`}><td>{s.courseName}</td><td>{s.total}</td><td>{s.completed}</td><td>{s.pending}</td><td>{rate}%</td></tr>;
 							})}
 							{status.length === 0 && <tr><td colSpan={5}>データがありません</td></tr>}
 						</tbody>

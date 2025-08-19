@@ -134,6 +134,8 @@ model CustomerProductContract {
   id          Int       @id @default(autoincrement())
   customerId  Int
   productId   Int
+  unitPrice   Int       @default(0)
+  patternType String    @default("1")
   isActive    Boolean   @default(true)
   startDate   DateTime
   endDate     DateTime?

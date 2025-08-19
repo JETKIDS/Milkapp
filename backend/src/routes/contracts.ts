@@ -16,7 +16,8 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const created = await contractsService.createContract({ ...req.body, customerId: Number((req.params as any).id) });
+    const customerId = Number((req.params as any).id);
+    const created = await contractsService.createContract(customerId, req.body);
     res.status(201).json({ success: true, data: created });
   } catch (e) {
     next(e);

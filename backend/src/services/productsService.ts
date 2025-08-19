@@ -2,11 +2,13 @@ import { z } from 'zod';
 import { productsRepository } from '../repositories/productsRepository';
 
 export const productCreateSchema = z.object({
+  id: z.number().int().positive().optional(),
   name: z.string().min(1),
   manufacturerId: z.number().int().positive(),
   price: z.number().int().nonnegative(),
   unit: z.string().min(1),
   description: z.string().optional(),
+  stock: z.number().int().nonnegative().optional(),
 });
 export const productUpdateSchema = productCreateSchema.partial();
 

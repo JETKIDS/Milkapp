@@ -10,7 +10,7 @@ import { apiGet, apiJson, apiGetWithHeaders } from '../lib/api';
 import { getDataTyped, postDataTyped } from '../lib/typedApi';
 import { paginate, sortBy, SortDir } from '../lib/paging';
 import { Pagination } from '../components/Pagination';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { putDataTyped } from '../lib/typedApi';
 import { useToast } from '../components/Toast';
@@ -27,6 +27,7 @@ export function OrdersPage() {
 	const [items, setItems] = React.useState<any[]>([]);
     const toast = useToast();
     const [sp, setSp] = useSearchParams();
+    const nav = useNavigate();
     const [sortKey, setSortKey] = React.useState<'id'|'customerId'|'productId'|'quantity'|'unitPrice'>((sp.get('sortKey') as any) ?? 'id');
     const [sortDir, setSortDir] = React.useState<SortDir>((sp.get('sortDir') as SortDir) ?? 'asc');
     const [page, setPage] = React.useState(Number(sp.get('page') ?? '1'));
@@ -69,7 +70,7 @@ export function OrdersPage() {
 
 	return (
 		<div className="card">
-			<div className="toolbar"><h2 style={{ margin: 0 }}>Orders</h2></div>
+			<div className="toolbar"><h2 style={{ margin: 0 }}>🧾 注文</h2></div>
 			<form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
 				<FormSelect label="顧客" {...register('customerId')} error={errors.customerId} options={customers.map((c:any)=>({ value: c.id, label: c.name }))} />
 				<FormSelect label="商品" {...register('productId')} error={errors.productId} options={products.map((p:any)=>({ value: p.id, label: p.name }))} />
@@ -88,17 +89,21 @@ export function OrdersPage() {
 					<>
 						<table>
 							<thead><tr>
-								<th onClick={()=>onSort('id')}>ID</th>
-								<th onClick={()=>onSort('customerId')}>顧客</th>
-								<th onClick={()=>onSort('productId')}>商品</th>
-								<th onClick={()=>onSort('quantity')}>数量</th>
-								<th onClick={()=>onSort('unitPrice')}>単価</th>
-                                <th>操作</th>
+								<th className="sortable" onClick={()=>onSort('id')}>ID <span className="indicator">{sortKey==='id' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th>
+								<th className="sortable" onClick={()=>onSort('customerId')}>顧客 <span className="indicator">{sortKey==='customerId' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th>
+								<th className="sortable" onClick={()=>onSort('productId')}>商品 <span className="indicator">{sortKey==='productId' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th>
+								<th className="sortable" onClick={()=>onSort('quantity')}>数量 <span className="indicator">{sortKey==='quantity' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th>
+								<th className="sortable" onClick={()=>onSort('unitPrice')}>単価 <span className="indicator">{sortKey==='unitPrice' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th>
+								<th>操作</th>
 							</tr></thead>
-							<tbody>
-								{rows.map((o:any)=>(
-                                    <tr key={o.id}><td>{o.id}</td><td>{o.customerId}</td><td>{o.productId}</td><td>{o.quantity}</td><td>{o.unitPrice}</td><td><button className="ghost" onClick={()=>{ setEditing(o); eForm.reset({ customerId: o.customerId, productId: o.productId, quantity: o.quantity, unitPrice: o.unitPrice }); setEditOpen(true); }}>編集</button></td></tr>
-								))}
+                            <tbody>
+                            {rows.map((o:any)=>{
+								const customer = customers.find((c:any)=>c.id===o.customerId);
+								const product = products.find((p:any)=>p.id===o.productId);
+								return (
+                                    <tr key={o.id} className="clickable" onClick={()=>nav(`/customers/${o.customerId}/detail`)}><td>{o.id}</td><td>{customer?.name ?? `#${o.customerId}`}</td><td>{product?.name ?? `#${o.productId}`}</td><td>{o.quantity}</td><td>{o.unitPrice}</td><td onClick={(e)=>e.stopPropagation()}><button className="ghost" onClick={()=>{ setEditing(o); eForm.reset({ customerId: o.customerId, productId: o.productId, quantity: o.quantity, unitPrice: o.unitPrice }); setEditOpen(true); }}>編集</button></td></tr>
+								);
+							})}
 							</tbody>
 						</table>
 						<div className="toolbar" style={{ marginTop: 12 }}>

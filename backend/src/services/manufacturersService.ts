@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { manufacturersRepository } from '../repositories/manufacturersRepository';
 
 export const manufacturerCreateSchema = z.object({
+  id: z.number().int().positive().optional(),
   name: z.string().min(1),
   contactInfo: z.string().optional(),
 });

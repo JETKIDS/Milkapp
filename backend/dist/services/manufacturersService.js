@@ -4,6 +4,7 @@ exports.manufacturersService = exports.manufacturerUpdateSchema = exports.manufa
 const zod_1 = require("zod");
 const manufacturersRepository_1 = require("../repositories/manufacturersRepository");
 exports.manufacturerCreateSchema = zod_1.z.object({
+    id: zod_1.z.number().int().positive().optional(),
     name: zod_1.z.string().min(1),
     contactInfo: zod_1.z.string().optional(),
 });

@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma';
 
 export interface CreateDeliveryCourseInput {
+  id?: number;
   name: string;
   description?: string;
 }

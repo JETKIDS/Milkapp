@@ -4,11 +4,13 @@ exports.productsService = exports.productUpdateSchema = exports.productCreateSch
 const zod_1 = require("zod");
 const productsRepository_1 = require("../repositories/productsRepository");
 exports.productCreateSchema = zod_1.z.object({
+    id: zod_1.z.number().int().positive().optional(),
     name: zod_1.z.string().min(1),
     manufacturerId: zod_1.z.number().int().positive(),
     price: zod_1.z.number().int().nonnegative(),
     unit: zod_1.z.string().min(1),
     description: zod_1.z.string().optional(),
+    stock: zod_1.z.number().int().nonnegative().optional(),
 });
 exports.productUpdateSchema = exports.productCreateSchema.partial();
 exports.productsService = {

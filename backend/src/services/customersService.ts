@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { customersRepository } from '../repositories/customersRepository';
 
 export const createCustomerSchema = z.object({
+  id: z.number().int().positive().optional(),
   name: z.string().min(1),
   address: z.string().min(1),
   phone: z.string().optional(),

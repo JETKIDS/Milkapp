@@ -1,11 +1,20 @@
 import prisma from '../lib/prisma';
 
 export interface CreateContractInput {
-  customerId: number;
+  customerId?: number;
   productId: number;
+  startDate: string; // YYYY-MM-DD形式
+  unitPrice: number;
+  patternType: string;
+  // 各曜日の数量
+  sunday?: number;
+  monday?: number;
+  tuesday?: number;
+  wednesday?: number;
+  thursday?: number;
+  friday?: number;
+  saturday?: number;
   isActive?: boolean;
-  startDate: string; // ISO
-  endDate?: string;  // ISO
 }
 
 export interface UpdateContractInput extends Partial<CreateContractInput> {}
@@ -24,21 +33,48 @@ export const contractsRepository = {
   async listByCustomer(customerId: number) {
     return prisma.customerProductContract.findMany({ where: { customerId }, include: { product: true, patterns: true } });
   },
-  async createContract(input: CreateContractInput) {
-    return prisma.customerProductContract.create({
+  async createContract(input: CreateContractInput & { customerId: number }) {
+    // 契約を作成
+    const contract = await prisma.customerProductContract.create({
       data: {
         customerId: input.customerId,
         productId: input.productId,
+        unitPrice: input.unitPrice,
+        patternType: input.patternType,
         isActive: input.isActive ?? true,
         startDate: new Date(input.startDate),
-        endDate: input.endDate ? new Date(input.endDate) : undefined,
       },
     });
+
+    // 各曜日の配達パターンを作成
+    const patterns = [];
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+    
+    for (let i = 0; i < days.length; i++) {
+      const dayKey = days[i];
+      const quantity = input[dayKey];
+      if (quantity && quantity > 0) {
+        patterns.push({
+          contractId: contract.id,
+          dayOfWeek: i, // 0=日曜, 1=月曜, ...
+          quantity: quantity,
+          isActive: true,
+        });
+      }
+    }
+
+    // パターンがある場合は一括作成
+    if (patterns.length > 0) {
+      await prisma.deliveryPattern.createMany({
+        data: patterns,
+      });
+    }
+
+    return contract;
   },
   async updateContract(id: number, input: UpdateContractInput) {
     const data: any = { ...input };
     if (input.startDate) data.startDate = new Date(input.startDate);
-    if (input.endDate) data.endDate = new Date(input.endDate);
     return prisma.customerProductContract.update({ where: { id }, data });
   },
   async removeContract(id: number) {

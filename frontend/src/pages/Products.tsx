@@ -1,12 +1,6 @@
 import React from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { FormTextField } from '../components/FormTextField';
-import { FormNumberField } from '../components/FormNumberField';
-import { FormSelect } from '../components/FormSelect';
 import { apiGet, apiJson } from '../lib/api';
-import { getDataTyped, postDataTyped, deleteVoid } from '../lib/typedApi';
+import { getDataTyped, deleteVoid } from '../lib/typedApi';
 import { apiGetWithHeaders } from '../lib/api';
 import { paginate, sortBy, SortDir } from '../lib/paging';
 import { Pagination } from '../components/Pagination';
@@ -14,72 +8,58 @@ import { useToast } from '../components/Toast';
 import { Loading } from '../components/Loading';
 import { useDebounce } from '../lib/hooks';
 import { useSearchParams } from 'react-router-dom';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+// 編集機能も新規登録ページに移動したためModalは不要
 
-const schema = z.object({
-	name: z.string().min(1, '必須です'),
-	manufacturerId: z.coerce.number().int().positive({ message: '必須です' }),
-	price: z.coerce.number().int().min(0),
-	unit: z.string().min(1, '必須です'),
-});
-type FormValues = z.infer<typeof schema>;
+// 登録機能は新規登録ページに移動
 
 export function ProductsPage() {
     const toast = useToast();
     const [items, setItems] = React.useState<any[]>([]);
     const [sp, setSp] = useSearchParams();
-    const [q, setQ] = React.useState(sp.get('q') ?? '');
+    // 検索機能は削除済み
+    // 登録機能は新規登録ページに移動したため、検索モードのみ
     const [sortKey, setSortKey] = React.useState<'id'|'name'|'price'>((sp.get('sortKey') as any) ?? 'id');
     const [sortDir, setSortDir] = React.useState<SortDir>((sp.get('sortDir') as SortDir) ?? 'asc');
     const [page, setPage] = React.useState(Number(sp.get('page') ?? '1'));
 	const [pageSize] = React.useState(10);
-	const [mans, setMans] = React.useState<any[]>([]);
-    const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({ resolver: zodResolver(schema) });
-    const [editOpen, setEditOpen] = React.useState(false);
-    const [editing, setEditing] = React.useState<any | null>(null);
+    // 編集機能も削除
 
     const [loading, setLoading] = React.useState(false);
     const [totalCount, setTotalCount] = React.useState<number | undefined>(undefined);
-    const qDebounced = useDebounce(q, 300);
+    // デバウンス機能は削除済み
     const load = async () => {
         setLoading(true);
         try {
-            const qs = new URLSearchParams({ q: qDebounced, sortKey, sortDir, page: String(page), pageSize: String(pageSize) }).toString();
+            const qs = new URLSearchParams({ sortKey, sortDir, page: String(page), pageSize: String(pageSize) }).toString();
             const { data, total } = await apiGetWithHeaders<any[]>(`/api/products?${qs}`);
             setItems(data);
             setTotalCount(total);
-            setMans(await getDataTyped<any[]>('/api/manufacturers'));
+            // メーカー情報は不要（登録機能削除のため）
         } catch { toast.notify('error', '商品/メーカーの取得に失敗'); }
         finally { setLoading(false); }
     };
-	React.useEffect(() => { void load(); }, [qDebounced, sortKey, sortDir, page]);
+	React.useEffect(() => { void load(); }, [sortKey, sortDir, page]);
     React.useEffect(() => {
         const next = new URLSearchParams(sp);
-        next.set('q', qDebounced);
         next.set('sortKey', sortKey);
         next.set('sortDir', sortDir);
         next.set('page', String(page));
         setSp(next, { replace: true });
-    }, [qDebounced, sortKey, sortDir, page]);
+    }, [sortKey, sortDir, page]);
 
-    const onSubmit = async (v: FormValues) => { try { await postDataTyped<typeof v, any>('/api/products', v); toast.notify('success','作成しました'); reset(); await load(); } catch { toast.notify('error','作成に失敗'); } };
-    const onUpdate = async (id: number, v: FormValues) => { try { await postDataTyped<typeof v, any>(`/api/products/${id}`, v as any); toast.notify('success','更新しました'); setEditOpen(false); setEditing(null); await load(); } catch { toast.notify('error','更新に失敗'); } };
+    // 登録・更新機能は新規登録ページに移動
+    const [confirmOpen, setConfirmOpen] = React.useState(false);
+    const [deleteId, setDeleteId] = React.useState<number | null>(null);
     const onDelete = async (id: number) => { try { await deleteVoid(`/api/products/${id}`); toast.notify('success','削除しました'); await load(); } catch { toast.notify('error','削除に失敗'); } };
 
 	return (
 		<div className="card">
-            <div className="toolbar">
-                <h2 style={{ margin: 0 }}>Products</h2>
+			<div className="toolbar">
+				<h2 style={{ margin: 0 }}>📦 商品</h2>
                 {loading && <Loading />}
-				<input className="searchbox" placeholder="検索（商品名/メーカー）" value={q} onChange={(e)=>setQ(e.target.value)} />
-			</div>
-			<form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-				<FormTextField label="商品名" {...register('name')} error={errors.name} />
-				<FormSelect label="メーカー" {...register('manufacturerId')} error={errors.manufacturerId} options={mans.map((m:any)=>({ value: m.id, label: m.name }))} />
-				<FormTextField label="価格" type="number" {...register('price')} error={errors.price} />
-				<FormTextField label="単位" {...register('unit')} error={errors.unit} />
-				<div><button type="submit" disabled={isSubmitting}>作成</button></div>
-			</form>
-			{(() => {
+            </div>
+            {(() => {
                 const rows = items;
                 const total = totalCount ?? rows.length;
                 const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -87,11 +67,12 @@ export function ProductsPage() {
 				const onSort = (key: 'id'|'name'|'price') => { if (sortKey === key) setSortDir(sortDir==='asc'?'desc':'asc'); else { setSortKey(key); setSortDir('asc'); } };
 				return (
 					<>
+                        {/* 検索機能は削除済み */}
 						<table>
-							<thead><tr><th onClick={()=>onSort('id')}>ID</th><th onClick={()=>onSort('name')}>商品名</th><th>メーカー</th><th onClick={()=>onSort('price')}>価格</th><th /></tr></thead>
+							<thead><tr><th className="sortable" onClick={()=>onSort('id')}>ID <span className="indicator">{sortKey==='id' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th className="sortable" onClick={()=>onSort('name')}>商品名 <span className="indicator">{sortKey==='name' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th>メーカー</th><th className="sortable" onClick={()=>onSort('price')}>価格 <span className="indicator">{sortKey==='price' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th /></tr></thead>
 							<tbody>
 								{rows.map((p:any)=>(
-                            <tr key={p.id}><td>{p.id}</td><td>{p.name}</td><td>{p.manufacturer?.name}</td><td>{p.price}</td><td style={{ display: 'flex', gap: 8 }}><button className="ghost" onClick={()=>{ setEditing(p); setEditOpen(true); }}>編集</button><button className="ghost" onClick={()=>onDelete(p.id)}>削除</button></td></tr>
+                            <tr key={p.id}><td>{p.id}</td><td>{p.name}</td><td>{p.manufacturer?.name}</td><td>{p.price}</td><td style={{ display: 'flex', gap: 8 }}><button className="ghost" onClick={()=>{ setDeleteId(p.id); setConfirmOpen(true); }}>削除</button></td></tr>
 								))}
 							</tbody>
 						</table>
@@ -101,26 +82,8 @@ export function ProductsPage() {
 						</div>
 					</>
 				);
-			})()}
-        {editOpen && editing && (
-            <div className="modal-backdrop" onClick={()=>{ setEditOpen(false); setEditing(null); }}>
-                <div className="modal" onClick={(e)=>e.stopPropagation()}>
-                    <div className="modal-header">
-                        <h3 style={{ margin: 0 }}>商品編集 #{editing.id}</h3>
-                        <button className="ghost" onClick={()=>{ setEditOpen(false); setEditing(null); }}>×</button>
-                    </div>
-                    <div className="modal-body">
-                        <form onSubmit={handleSubmit(v=>onUpdate(editing.id, v))} style={{ display: 'grid', gap: 8 }}>
-                            <FormTextField label="商品名" defaultValue={editing.name} {...register('name')} error={errors.name} />
-                            <FormSelect label="メーカー" defaultValue={editing.manufacturerId} {...register('manufacturerId')} error={errors.manufacturerId} options={mans.map((m:any)=>({ value: m.id, label: m.name }))} />
-                            <FormNumberField label="価格" defaultValue={editing.price} {...register('price')} error={errors.price} />
-                            <FormTextField label="単位" defaultValue={editing.unit} {...register('unit')} error={errors.unit} />
-                            <div><button type="submit" disabled={isSubmitting}>更新</button></div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        )}
+            })()}
+        <ConfirmDialog open={confirmOpen} onCancel={()=>{ setConfirmOpen(false); setDeleteId(null); }} onConfirm={async ()=>{ if (deleteId!=null) { await onDelete(deleteId); } setConfirmOpen(false); setDeleteId(null); }}>本当に削除しますか？</ConfirmDialog>
 		</div>
 	);
 }

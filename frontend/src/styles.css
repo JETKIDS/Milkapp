@@ -34,8 +34,19 @@ html, body, #root {
 	gap: 12px;
 	padding: 12px 16px;
 }
-.nav a { text-decoration: none; color: var(--muted); }
-.nav a:hover { color: var(--text); }
+.nav a { 
+	text-decoration: none; 
+	color: var(--muted); 
+	padding: 8px 12px; 
+	border-radius: 6px; 
+	transition: all 0.2s ease;
+}
+.nav a:hover { color: var(--text); background: var(--bg); }
+.nav a.active { 
+	color: var(--primary); 
+	background: var(--bg); 
+	font-weight: 600;
+}
 
 .card {
 	background: var(--card);
@@ -95,5 +106,49 @@ tbody tr:hover { background: #f8fafc; }
 .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; width: min(720px, 92vw); max-height: 86vh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .modal-body { padding: 16px; overflow: auto; }
+
+/* タブスタイル */
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+.tab {
+	background: transparent;
+	border: none;
+	border-bottom: 2px solid transparent;
+	padding: 12px 16px;
+	cursor: pointer;
+	color: var(--muted);
+	font-weight: 500;
+	transition: all 0.2s ease;
+	border-radius: 4px 4px 0 0;
+}
+.tab:hover { color: var(--text); background: var(--bg); }
+.tab.active { 
+	color: var(--primary); 
+	border-bottom-color: var(--primary); 
+	background: var(--card);
+}
+
+/* ソート可能なテーブルヘッダー */
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { background: var(--bg); }
+.indicator { font-size: 12px; margin-left: 4px; }
+
+/* クリック可能な行 */
+.clickable { cursor: pointer; }
+.clickable:hover { background: var(--bg) !important; }
+
+/* フォームセクション */
+.form-section {
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 20px;
+	margin-bottom: 16px;
+}
+
+.form-section h3 {
+	color: var(--primary);
+	font-size: 16px;
+	font-weight: 600;
+}
 
 

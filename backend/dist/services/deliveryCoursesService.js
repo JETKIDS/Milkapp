@@ -4,6 +4,7 @@ exports.deliveryCoursesService = exports.deliveryCourseUpdateSchema = exports.de
 const zod_1 = require("zod");
 const deliveryCoursesRepository_1 = require("../repositories/deliveryCoursesRepository");
 exports.deliveryCourseCreateSchema = zod_1.z.object({
+    id: zod_1.z.number().int().positive().optional(),
     name: zod_1.z.string().min(1),
     description: zod_1.z.string().optional(),
 });

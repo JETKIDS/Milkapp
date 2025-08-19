@@ -4,6 +4,7 @@ exports.customersService = exports.updateCustomerSchema = exports.createCustomer
 const zod_1 = require("zod");
 const customersRepository_1 = require("../repositories/customersRepository");
 exports.createCustomerSchema = zod_1.z.object({
+    id: zod_1.z.number().int().positive().optional(),
     name: zod_1.z.string().min(1),
     address: zod_1.z.string().min(1),
     phone: zod_1.z.string().optional(),

@@ -4,20 +4,41 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FormTextField } from '../components/FormTextField';
+import { FormNumberField } from '../components/FormNumberField';
 import { apiGet, apiJson } from '../lib/api';
 import { getDataTyped, postDataTyped, putDataTyped, deleteVoid } from '../lib/typedApi';
 import { useToast } from '../components/Toast';
 import { FormSelect } from '../components/FormSelect';
 
-const contractSchema = z.object({ productId: z.coerce.number().int().positive(), startDate: z.string().min(1), isActive: z.boolean().optional() });
+// 新しい契約スキーマ（画像に基づく）
+const contractSchema = z.object({
+	productId: z.coerce.number().int().positive(),
+	startDate: z.string().min(1),
+	unitPrice: z.coerce.number().min(0),
+	patternType: z.enum(['1', '2', '3', '4', '5']).default('1'), // 1:定期 2:隔週 3:月間 4:その他(日) 5:その他(週)
+	// 各曜日の数量
+	sunday: z.coerce.number().min(0).optional(),
+	monday: z.coerce.number().min(0).optional(),
+	tuesday: z.coerce.number().min(0).optional(),
+	wednesday: z.coerce.number().min(0).optional(),
+	thursday: z.coerce.number().min(0).optional(),
+	friday: z.coerce.number().min(0).optional(),
+	saturday: z.coerce.number().min(0).optional(),
+});
 type ContractValues = z.infer<typeof contractSchema>;
 
-const patternSchema = z.object({ contractId: z.coerce.number().int().positive(), dayOfWeek: z.coerce.number().int().min(0).max(6), quantity: z.coerce.number().int().positive() });
-type PatternValues = z.infer<typeof patternSchema>;
-
-const days = [
-	{ value: 0, label: '日' },{ value: 1, label: '月' },{ value: 2, label: '火' },{ value: 3, label: '水' },{ value: 4, label: '木' },{ value: 5, label: '金' },{ value: 6, label: '土' },
+// パターン種別の選択肢
+const patternTypes = [
+	{ value: '1', label: '1: 定期' },
+	{ value: '2', label: '2: 隔週' },
+	{ value: '3', label: '3: 月間' },
+	{ value: '4', label: '4: その他(日)' },
+	{ value: '5', label: '5: その他(週)' },
 ];
+
+// 曜日ラベル
+const dayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
 export function ContractsPage() {
 	const { id } = useParams();
@@ -25,113 +46,217 @@ export function ContractsPage() {
 	const toast = useToast();
 	const [contracts, setContracts] = React.useState<any[]>([]);
 	const [products, setProducts] = React.useState<any[]>([]);
-	const [patterns, setPatterns] = React.useState<any[]>([]);
-	const [selectedContract, setSelectedContract] = React.useState<number | null>(null);
 
-	const cForm = useForm<ContractValues>({ resolver: zodResolver(contractSchema) });
-	const pForm = useForm<PatternValues>({ resolver: zodResolver(patternSchema) });
+	const contractForm = useForm<ContractValues>({ 
+		resolver: zodResolver(contractSchema),
+		defaultValues: {
+			patternType: '1',
+			unitPrice: 0,
+			sunday: 0,
+			monday: 0,
+			tuesday: 0,
+			wednesday: 0,
+			thursday: 0,
+			friday: 0,
+			saturday: 0,
+		}
+	});
+
+	// 商品選択時に単価を自動設定
+	const selectedProductId = contractForm.watch('productId');
+	React.useEffect(() => {
+		if (selectedProductId && products.length > 0) {
+			const selectedProduct = products.find(p => p.id === Number(selectedProductId));
+			if (selectedProduct && selectedProduct.price) {
+				contractForm.setValue('unitPrice', selectedProduct.price);
+			}
+		}
+	}, [selectedProductId, products, contractForm]);
 
     const load = async () => {
-        const cs = await getDataTyped<any[]>(`/api/customers/${customerId}/contracts`);
-        setContracts(cs);
-        setProducts(await getDataTyped<any[]>(`/api/products`));
-        if (selectedContract) setPatterns(await getDataTyped<any[]>(`/api/customers/${customerId}/delivery-patterns/${selectedContract}`));
+        try {
+            const cs = await getDataTyped<any[]>(`/api/customers/${customerId}/contracts`);
+            setContracts(cs);
+            setProducts(await getDataTyped<any[]>(`/api/products`));
+        } catch (error) {
+            toast.notify('error', 'データの取得に失敗しました');
+        }
     };
-	React.useEffect(() => { void load(); }, [selectedContract]);
+	React.useEffect(() => { void load(); }, [customerId]);
 
     const createContract = async (v: ContractValues) => {
-        await postDataTyped<typeof v, any>(`/api/customers/${customerId}/contracts`, v);
-		toast.notify('success', '契約を作成しました');
-		cForm.reset();
-		await load();
-	};
-    const updateContract = async (contractId: number, data: Partial<ContractValues>) => {
-        await putDataTyped<typeof data, any>(`/api/customers/${customerId}/contracts/${contractId}`, data);
-		toast.notify('success', '契約を更新しました');
-		await load();
-	};
+        try {
+            await postDataTyped<typeof v, any>(`/api/customers/${customerId}/contracts`, v);
+            toast.notify('success', '契約を作成しました');
+            contractForm.reset();
+            await load();
+        } catch (error) {
+            toast.notify('error', '契約の作成に失敗しました');
+        }
+    };
     const deleteContract = async (contractId: number) => {
-        await deleteVoid(`/api/customers/${customerId}/contracts/${contractId}`);
-		toast.notify('success', '契約を削除しました');
-		if (selectedContract === contractId) setSelectedContract(null);
-		await load();
-	};
-
-    const createPattern = async (v: PatternValues) => {
-        await postDataTyped<typeof v, any>(`/api/customers/${customerId}/delivery-patterns`, v);
-		toast.notify('success', 'パターンを作成しました');
-		pForm.reset();
-		await load();
-	};
-    const updatePattern = async (patternId: number, data: Partial<PatternValues>) => {
-        await putDataTyped<typeof data, any>(`/api/customers/${customerId}/delivery-patterns/${patternId}`, data);
-		toast.notify('success', 'パターンを更新しました');
-		await load();
-	};
-    const deletePattern = async (patternId: number) => {
-        await deleteVoid(`/api/customers/${customerId}/delivery-patterns/${patternId}`);
-		toast.notify('success', 'パターンを削除しました');
-		await load();
-	};
+        try {
+            await deleteVoid(`/api/customers/${customerId}/contracts/${contractId}`);
+            toast.notify('success', '契約を削除しました');
+            await load();
+        } catch (error) {
+            toast.notify('error', '契約の削除に失敗しました');
+        }
+    };
 
 	return (
 		<div className="card">
-			<div className="toolbar"><h2 style={{ margin: 0 }}>Contracts & Patterns</h2></div>
-			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-				<div>
-					<h3>契約</h3>
-					<form onSubmit={cForm.handleSubmit(createContract)} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-						<FormSelect label="商品" {...cForm.register('productId')} error={cForm.formState.errors.productId} options={products.map((p:any)=>({ value: p.id, label: p.name }))} />
-						<FormTextField label="開始日(ISO)" placeholder="2025-08-01T00:00:00.000Z" {...cForm.register('startDate')} error={cForm.formState.errors.startDate} />
-						<div><button type="submit">追加</button></div>
-					</form>
+			<div className="toolbar">
+				<h2 style={{ margin: 0, background: '#4A90E2', color: 'white', padding: '8px 16px', borderRadius: '4px' }}>
+					契約商品の新規追加
+				</h2>
+			</div>
 
-					<table>
-						<thead><tr><th>ID</th><th>商品</th><th>開始日</th><th /></tr></thead>
+			{/* 新規契約作成フォーム */}
+			<form onSubmit={contractForm.handleSubmit(createContract)} style={{ padding: '20px', maxWidth: '600px' }}>
+				{/* 商品コード */}
+				<div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+					<label style={{ minWidth: '100px', fontWeight: 'bold' }}>商品コード:</label>
+					<FormSelect 
+						label=""
+						{...contractForm.register('productId')} 
+						error={contractForm.formState.errors.productId}
+						options={[
+							{ value: '', label: '商品を選択してください' },
+							...products.map((p: any) => ({ 
+								value: p.id, 
+								label: `${p.id}: ${p.name}` 
+							}))
+						]}
+						style={{ minWidth: '300px' }}
+					/>
+				</div>
+
+				{/* 開始日 */}
+				<div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+					<label style={{ minWidth: '100px', fontWeight: 'bold' }}>開始日:</label>
+					<FormTextField 
+						label=""
+						type="date"
+						{...contractForm.register('startDate')} 
+						error={contractForm.formState.errors.startDate}
+						style={{ minWidth: '200px' }}
+					/>
+				</div>
+
+				{/* 単価 */}
+				<div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+					<label style={{ minWidth: '100px', fontWeight: 'bold' }}>単価:</label>
+					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+						<FormNumberField 
+							label=""
+							{...contractForm.register('unitPrice')} 
+							error={contractForm.formState.errors.unitPrice}
+							style={{ minWidth: '120px' }}
+						/>
+						<div style={{ fontSize: '12px', color: '#666' }}>
+							※ 商品選択時に自動設定されます（変更可能）
+						</div>
+					</div>
+				</div>
+
+				{/* 配達パターン */}
+				<div style={{ marginBottom: '16px' }}>
+					<label style={{ fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>配達パターン:</label>
+					<div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+						{dayLabels.map((dayLabel, index) => (
+							<div key={index} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '60px' }}>
+								<span style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>
+									{dayLabel}
+								</span>
+								<FormNumberField
+									label=""
+									{...contractForm.register(dayKeys[index])}
+									error={contractForm.formState.errors[dayKeys[index]]}
+									style={{ width: '50px', textAlign: 'center' }}
+									min={0}
+								/>
+							</div>
+						))}
+					</div>
+				</div>
+
+				{/* パターン種別 */}
+				<div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+					<label style={{ minWidth: '100px', fontWeight: 'bold' }}>パターン種別:</label>
+					<FormSelect 
+						label=""
+						{...contractForm.register('patternType')} 
+						error={contractForm.formState.errors.patternType}
+						options={patternTypes}
+						style={{ minWidth: '200px' }}
+					/>
+				</div>
+
+				{/* ボタン */}
+				<div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+					<button 
+						type="button" 
+						className="ghost"
+						onClick={() => contractForm.reset()}
+					>
+						リセット
+					</button>
+					<button 
+						type="submit" 
+						disabled={contractForm.formState.isSubmitting}
+						style={{ minWidth: '100px' }}
+					>
+						{contractForm.formState.isSubmitting ? '登録中...' : '登録する'}
+					</button>
+				</div>
+			</form>
+
+			{/* 既存契約一覧 */}
+			{contracts.length > 0 && (
+				<div style={{ marginTop: '32px', padding: '0 20px 20px' }}>
+					<h3 style={{ borderBottom: '2px solid var(--primary)', paddingBottom: '8px' }}>既存契約一覧</h3>
+					<table style={{ width: '100%', marginTop: '16px' }}>
+						<thead>
+							<tr>
+								<th>ID</th>
+								<th>商品</th>
+								<th>開始日</th>
+								<th>単価</th>
+								<th>状態</th>
+								<th>操作</th>
+							</tr>
+						</thead>
 						<tbody>
-							{contracts.map((c:any)=> (
-								<tr key={c.id}>
-									<td>{c.id}</td>
-									<td>{c.product?.name ?? c.productId}</td>
-									<td>{new Date(c.startDate).toISOString()}</td>
-									<td style={{ display: 'flex', gap: 8 }}>
-										<button className="ghost" onClick={()=>setSelectedContract(c.id)}>パターン</button>
-										<button className="ghost" onClick={()=>updateContract(c.id, { isActive: !c.isActive })}>{c.isActive ? '停止' : '有効化'}</button>
-										<button className="ghost" onClick={()=>deleteContract(c.id)}>削除</button>
+							{contracts.map((contract: any) => (
+								<tr key={contract.id}>
+									<td>{contract.id}</td>
+									<td>{contract.product?.name || `商品ID: ${contract.productId}`}</td>
+									<td>{new Date(contract.startDate).toLocaleDateString('ja-JP')}</td>
+									<td>¥{contract.unitPrice || 0}</td>
+									<td>
+										<span style={{ 
+											color: contract.isActive ? 'green' : 'red',
+											fontWeight: 'bold' 
+										}}>
+											{contract.isActive ? '有効' : '停止'}
+										</span>
+									</td>
+									<td>
+										<button 
+											className="ghost" 
+											onClick={() => deleteContract(contract.id)}
+											style={{ color: 'red' }}
+										>
+											削除
+										</button>
 									</td>
 								</tr>
 							))}
 						</tbody>
 					</table>
 				</div>
-
-				<div>
-					<h3>配達パターン {selectedContract ? `(#${selectedContract})` : ''}</h3>
-					<form onSubmit={pForm.handleSubmit(createPattern)} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-						<FormSelect label="契約ID" {...pForm.register('contractId')} error={pForm.formState.errors.contractId} options={contracts.map((c:any)=>({ value: c.id, label: String(c.id) }))} />
-						<FormSelect label="曜日" {...pForm.register('dayOfWeek')} error={pForm.formState.errors.dayOfWeek} options={days} />
-						<FormTextField label="数量" type="number" {...pForm.register('quantity')} error={pForm.formState.errors.quantity} />
-						<div><button type="submit">追加</button></div>
-					</form>
-
-					{selectedContract && (
-						<table>
-							<thead><tr><th>ID</th><th>曜日</th><th>数量</th><th /></tr></thead>
-							<tbody>
-								{patterns.map((p:any)=> (
-									<tr key={p.id}>
-										<td>{p.id}</td><td>{p.dayOfWeek}</td><td>{p.quantity}</td>
-										<td style={{ display: 'flex', gap: 8 }}>
-											<button className="ghost" onClick={()=>updatePattern(p.id, { quantity: p.quantity + 1 })}>+1</button>
-											<button className="ghost" onClick={()=>deletePattern(p.id)}>削除</button>
-										</td>
-									</tr>
-								))}
-							</tbody>
-						</table>
-					)}
-				</div>
-			</div>
+			)}
 		</div>
 	);
 }

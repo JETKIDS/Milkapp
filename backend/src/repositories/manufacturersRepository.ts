@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma';
 
 export interface CreateManufacturerInput {
+  id?: number;
   name: string;
   contactInfo?: string;
 }

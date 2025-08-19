@@ -70,7 +70,7 @@ export function SchedulesPage() {
 
 	return (
 		<div className="card">
-			<div className="toolbar"><h2 style={{ margin: 0 }}>Schedules</h2></div>
+			<div className="toolbar"><h2 style={{ margin: 0 }}>🗓️ スケジュール</h2></div>
 			<form onSubmit={handleSubmit(onSubmit)} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
 				<FormSelect label="顧客" {...register('customerId')} error={errors.customerId} options={customers.map((c:any)=>({ value: c.id, label: c.name }))} />
 				<FormSelect label="曜日" {...register('dayOfWeek')} error={errors.dayOfWeek} options={days} />
