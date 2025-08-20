@@ -1,5 +1,6 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
+import { downloadBlob, postPdf } from '../lib/api';
 import { getDataTyped, putDataTyped } from '../lib/typedApi';
 import { useToast } from '../components/Toast';
 
@@ -14,6 +15,10 @@ export function CustomerDetailPage() {
 
 	// カレンダー用の状態
 	const [calendarData, setCalendarData] = React.useState<any[]>([]);
+	
+	// 請求書用の状態
+	const [invoiceHistory, setInvoiceHistory] = React.useState<any[]>([]);
+	const [invoiceLoading, setInvoiceLoading] = React.useState(false);
 
 	// 初期データ読み込み
 	React.useEffect(() => { (async () => {
@@ -44,6 +49,14 @@ export function CustomerDetailPage() {
 			
 			// カレンダーデータを生成
 			generateCalendarData(contractsArray);
+			
+			// 請求履歴を取得
+			try {
+				const historyData = await getDataTyped(`/api/reports/invoice-history/${customerId}`) as any;
+				setInvoiceHistory(historyData || []);
+			} catch (e) {
+				console.log('請求履歴の取得に失敗しました:', e);
+			}
 		} catch (error) {
 			console.error('Error loading customer detail:', error);
 			toast.notify('error','顧客詳細の取得に失敗しました');
@@ -119,6 +132,40 @@ export function CustomerDetailPage() {
 
 	const formatCurrency = (n: number) => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(n);
 	const getDayName = (dayOfWeek: number) => ['日', '月', '火', '水', '木', '金', '土'][dayOfWeek];
+
+	// 今月の請求書を作成
+	const createMonthlyInvoice = async () => {
+		try {
+			setInvoiceLoading(true);
+			
+			// 今月の開始日と終了日を計算
+			const now = new Date();
+			const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+			const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+			
+			const payload = {
+				startDate: startOfMonth.toISOString(),
+				endDate: endOfMonth.toISOString()
+			};
+			
+			toast.notify('info', '請求書を作成中...');
+			const blob = await postPdf(`/api/reports/invoice/${customerId}`, payload);
+			
+			const filename = `invoice_${detail?.data?.name || 'customer'}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}.pdf`;
+			downloadBlob(blob, filename);
+			
+			toast.notify('success', '請求書PDFをダウンロードしました');
+			
+			// 請求履歴を更新
+			const historyData = await getDataTyped(`/api/reports/invoice-history/${customerId}`) as any;
+			setInvoiceHistory(historyData || []);
+		} catch (e: any) {
+			console.error('請求書作成エラー:', e);
+			toast.notify('error', e?.message ?? '請求書作成に失敗しました');
+		} finally {
+			setInvoiceLoading(false);
+		}
+	};
 
 	return (
 		<div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', backgroundColor: '#f5f5f5' }}>
@@ -405,6 +452,88 @@ export function CustomerDetailPage() {
 									});
 									return sum + dayTotal;
 								}, 0))}
+							</div>
+						</div>
+
+						{/* 請求書セクション */}
+						<div style={{ marginTop: '24px', borderTop: '2px solid #1976d2', paddingTop: '16px' }}>
+							<h4 style={{ margin: '0 0 16px 0', color: '#1976d2', fontSize: '16px' }}>📄 請求書</h4>
+							
+							{/* 今月の請求書作成ボタン */}
+							<div style={{ marginBottom: '16px' }}>
+								<button
+									onClick={createMonthlyInvoice}
+									disabled={invoiceLoading}
+									style={{
+										backgroundColor: invoiceLoading ? '#ccc' : '#1976d2',
+										color: 'white',
+										border: 'none',
+										padding: '12px 24px',
+										borderRadius: '6px',
+										fontSize: '14px',
+										fontWeight: 'bold',
+										cursor: invoiceLoading ? 'not-allowed' : 'pointer',
+										transition: 'background-color 0.2s'
+									}}
+								>
+									{invoiceLoading ? '作成中...' : `${new Date().getMonth() + 1}月分請求書作成`}
+								</button>
+								<div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+									契約内容に基づいて今月の請求書を作成します
+								</div>
+							</div>
+
+							{/* 請求履歴 */}
+							<div>
+								<h5 style={{ margin: '0 0 8px 0', color: '#333', fontSize: '14px' }}>請求履歴</h5>
+								{invoiceHistory.length > 0 ? (
+									<div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+										{invoiceHistory.map((invoice: any) => (
+											<div
+												key={invoice.id}
+												style={{
+													display: 'flex',
+													justifyContent: 'space-between',
+													alignItems: 'center',
+													padding: '8px 12px',
+													backgroundColor: '#f8f9fa',
+													border: '1px solid #e9ecef',
+													borderRadius: '4px',
+													marginBottom: '4px',
+													fontSize: '13px'
+												}}
+											>
+												<div>
+													<div style={{ fontWeight: 'bold' }}>
+														{new Date(invoice.invoicePeriodStart).toLocaleDateString('ja-JP')} 
+														～ {new Date(invoice.invoicePeriodEnd).toLocaleDateString('ja-JP')}
+													</div>
+													<div style={{ color: '#666', fontSize: '11px' }}>
+														発行日: {new Date(invoice.issuedDate).toLocaleDateString('ja-JP')}
+													</div>
+												</div>
+												<div style={{ 
+													fontWeight: 'bold', 
+													color: '#d32f2f',
+													fontSize: '14px'
+												}}>
+													{formatCurrency(invoice.totalAmount)}
+												</div>
+											</div>
+										))}
+									</div>
+								) : (
+									<div style={{ 
+										fontSize: '12px', 
+										color: '#666', 
+										fontStyle: 'italic',
+										padding: '8px',
+										backgroundColor: '#f8f9fa',
+										borderRadius: '4px'
+									}}>
+										請求履歴がありません
+									</div>
+								)}
 							</div>
 						</div>
 					</div>

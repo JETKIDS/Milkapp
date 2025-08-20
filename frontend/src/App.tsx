@@ -4,10 +4,12 @@ import { CustomersPage } from './pages/Customers';
 import { ManufacturersPage } from './pages/Manufacturers';
 import { ProductsPage } from './pages/Products';
 import { CoursesPage } from './pages/Courses';
+import { CourseDetailPage } from './pages/CourseDetail';
 import { OrdersPage } from './pages/Orders';
 import { SchedulesPage } from './pages/Schedules';
 import { ContractsPage } from './pages/Contracts';
 import { ReportsPage } from './pages/Reports';
+import { InvoicesPage } from './pages/Invoices';
 import { DashboardPage } from './pages/Dashboard';
 import { CustomerDetailPage } from './pages/CustomerDetail';
 import { RegisterPage } from './pages/Register';
@@ -26,6 +28,7 @@ function Layout() {
 					<NavLink to="/schedules" className={({ isActive }) => isActive ? 'active' : undefined}>🗓️ スケジュール</NavLink>
 					<NavLink to="/orders" className={({ isActive }) => isActive ? 'active' : undefined}>🧾 注文</NavLink>
 					<NavLink to="/reports" className={({ isActive }) => isActive ? 'active' : undefined}>📈 レポート</NavLink>
+					<NavLink to="/invoices" className={({ isActive }) => isActive ? 'active' : undefined}>📄 請求書</NavLink>
 				</nav>
 			</header>
 			<main className="container" style={{ paddingTop: 16 }}>
@@ -51,9 +54,11 @@ export function App() {
 				<Route path="/manufacturers" element={<ManufacturersPage />} />
 				<Route path="/products" element={<ProductsPage />} />
 				<Route path="/courses" element={<CoursesPage />} />
+				<Route path="/courses/:id" element={<CourseDetailPage />} />
 				<Route path="/schedules" element={<SchedulesPage />} />
 				<Route path="/orders" element={<OrdersPage />} />
 				<Route path="/reports" element={<ReportsPage />} />
+				<Route path="/invoices" element={<InvoicesPage />} />
 			</Route>
 		</Routes>
 	);

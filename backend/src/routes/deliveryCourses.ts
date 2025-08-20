@@ -22,6 +22,16 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+router.get('/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const course = await deliveryCoursesService.getById(id);
+    res.json({ success: true, data: course });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post('/', async (req, res, next) => {
   try {
     const created = await deliveryCoursesService.create(req.body);
@@ -46,6 +56,42 @@ router.delete('/:id', async (req, res, next) => {
     const id = Number(req.params.id);
     await deliveryCoursesService.remove(id);
     res.status(204).send();
+  } catch (e) {
+    next(e);
+  }
+});
+
+// コース詳細（顧客一覧含む）取得
+router.get('/:id/customers', async (req, res, next) => {
+  try {
+    const courseId = Number(req.params.id);
+    const customers = await deliveryCoursesService.getCourseCustomers(courseId);
+    res.json({ success: true, data: customers });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// コース内顧客の順番変更
+router.put('/:id/customers/reorder', async (req, res, next) => {
+  try {
+    const courseId = Number(req.params.id);
+    const { customerIds } = req.body; // 新しい順番の顧客IDの配列
+    await deliveryCoursesService.reorderCustomers(courseId, customerIds);
+    res.json({ success: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 顧客のコース移動
+router.put('/:id/customers/:customerId/transfer', async (req, res, next) => {
+  try {
+    const fromCourseId = Number(req.params.id);
+    const customerId = Number(req.params.customerId);
+    const { toCourseId, position } = req.body;
+    await deliveryCoursesService.transferCustomer(customerId, fromCourseId, toCourseId, position);
+    res.json({ success: true });
   } catch (e) {
     next(e);
   }

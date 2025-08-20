@@ -5,9 +5,9 @@ export const createCustomerSchema = z.object({
   id: z.number().int().positive().optional(),
   name: z.string().min(1),
   address: z.string().min(1),
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
-  deliveryCourseId: z.number().int().positive().optional(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable().or(z.literal('')),
+  deliveryCourseId: z.number().int().positive().optional().nullable(),
 });
 
 export const updateCustomerSchema = createCustomerSchema.partial();

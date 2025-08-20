@@ -4,9 +4,9 @@ export interface CreateCustomerInput {
   id?: number;
   name: string;
   address: string;
-  phone?: string;
-  email?: string;
-  deliveryCourseId?: number;
+  phone?: string | null;
+  email?: string | null;
+  deliveryCourseId?: number | null;
 }
 
 export interface UpdateCustomerInput extends Partial<CreateCustomerInput> {}

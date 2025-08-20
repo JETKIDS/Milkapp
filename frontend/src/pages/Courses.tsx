@@ -7,7 +7,7 @@ import { Pagination } from '../components/Pagination';
 import { useToast } from '../components/Toast';
 import { Loading } from '../components/Loading';
 // 編集機能も新規登録ページに移動
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useDebounce } from '../lib/hooks';
 
 // 登録機能は新規登録ページに移動
@@ -55,10 +55,23 @@ export function CoursesPage() {
 					<>
                         {/* 検索機能は削除済み */}
                         <table>
-                            <thead><tr><th className="sortable" onClick={()=>onSort('id')}>ID <span className="indicator">{sortKey==='id' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th className="sortable" onClick={()=>onSort('name')}>コース名 <span className="indicator">{sortKey==='name' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th /></tr></thead>
+                            <thead><tr><th className="sortable" onClick={()=>onSort('id')}>ID <span className="indicator">{sortKey==='id' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th className="sortable" onClick={()=>onSort('name')}>コース名 <span className="indicator">{sortKey==='name' ? (sortDir==='asc'?'▲':'▼') : ''}</span></th><th>操作</th></tr></thead>
 							<tbody>
                                 {rows.map((c:any)=>(
-                                    <tr key={c.id}><td>{c.id}</td><td>{c.name}</td><td style={{ display: 'flex', gap: 8 }}><button className="ghost" onClick={()=>onDelete(c.id)}>削除</button></td></tr>
+                                    <tr key={c.id}>
+                                        <td>{c.id}</td>
+                                        <td>{c.name}</td>
+                                        <td style={{ display: 'flex', gap: 8 }}>
+                                            <Link to={`/courses/${c.id}`}>
+                                                <button className="ghost" style={{ color: 'var(--primary)' }}>
+                                                    詳細・管理
+                                                </button>
+                                            </Link>
+                                            <button className="ghost" onClick={()=>onDelete(c.id)} style={{ color: 'red' }}>
+                                                削除
+                                            </button>
+                                        </td>
+                                    </tr>
 								))}
 							</tbody>
 						</table>
