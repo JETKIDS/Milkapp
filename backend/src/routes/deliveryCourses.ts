@@ -41,6 +41,31 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// 顧客のコース間移動（フロントエンドからの新しいエンドポイント）
+// 注意: /:id より前に配置する必要がある
+router.put('/transfer-customer', async (req, res, next) => {
+  try {
+    const { customerId, targetCourseId } = req.body;
+    
+    // 顧客の現在のコースIDを取得
+    const prisma = (await import('../lib/prisma')).default;
+    const customer = await prisma.customer.findUnique({
+      where: { id: Number(customerId) },
+      select: { deliveryCourseId: true }
+    });
+    
+    if (!customer) {
+      return res.status(404).json({ success: false, error: '顧客が見つかりません' });
+    }
+    
+    const fromCourseId = customer.deliveryCourseId;
+    await deliveryCoursesService.transferCustomer(Number(customerId), fromCourseId, Number(targetCourseId));
+    res.json({ success: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.put('/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);

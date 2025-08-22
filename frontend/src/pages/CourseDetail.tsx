@@ -22,6 +22,7 @@ export function CourseDetailPage() {
   const [loading, setLoading] = React.useState(false);
   const [draggedCustomer, setDraggedCustomer] = React.useState<Customer | null>(null);
   const [transferMode, setTransferMode] = React.useState<{ customerId: number; customerName: string } | null>(null);
+  const [mode, setMode] = React.useState<'reorder' | 'transfer'>('reorder'); // 'reorder': 順位変更モード, 'transfer': 顧客移動モード
 
   // データ読み込み
   const loadData = async () => {
@@ -118,6 +119,57 @@ export function CourseDetailPage() {
       <div className="toolbar">
         <h2 style={{ margin: 0 }}>🗺️ コース詳細: {course?.name || 'ロード中...'}</h2>
       </div>
+      
+      {/* モード切替ボタン */}
+      <div style={{ 
+        padding: '16px 20px', 
+        borderBottom: '1px solid #ddd',
+        backgroundColor: '#f8f9fa'
+      }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <span style={{ fontWeight: 'bold', marginRight: '8px' }}>操作モード:</span>
+          <button
+            onClick={() => setMode('reorder')}
+            style={{
+              padding: '8px 16px',
+              border: '1px solid var(--primary)',
+              borderRadius: '6px',
+              backgroundColor: mode === 'reorder' ? 'var(--primary)' : 'white',
+              color: mode === 'reorder' ? 'white' : 'var(--primary)',
+              cursor: 'pointer',
+              fontWeight: mode === 'reorder' ? 'bold' : 'normal',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            📋 順位変更
+          </button>
+          <button
+            onClick={() => setMode('transfer')}
+            style={{
+              padding: '8px 16px',
+              border: '1px solid var(--primary)',
+              borderRadius: '6px',
+              backgroundColor: mode === 'transfer' ? 'var(--primary)' : 'white',
+              color: mode === 'transfer' ? 'white' : 'var(--primary)',
+              cursor: 'pointer',
+              fontWeight: mode === 'transfer' ? 'bold' : 'normal',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            🚚 顧客移動
+          </button>
+        </div>
+        <div style={{ 
+          marginTop: '8px', 
+          fontSize: '14px', 
+          color: 'var(--muted)' 
+        }}>
+          {mode === 'reorder' 
+            ? '🖱️ ドラッグ&ドロップで顧客の配達順序を変更できます' 
+            : '👆 顧客をクリックして他のコースに移動できます'
+          }
+        </div>
+      </div>
 
       {/* 顧客一覧 */}
       <div style={{ padding: '20px' }}>
@@ -134,19 +186,22 @@ export function CourseDetailPage() {
             {customers.map((customer, index) => (
               <div
                 key={customer.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, customer)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, index)}
+                draggable={mode === 'reorder'}
+                onDragStart={mode === 'reorder' ? (e) => handleDragStart(e, customer) : undefined}
+                onDragOver={mode === 'reorder' ? handleDragOver : undefined}
+                onDrop={mode === 'reorder' ? (e) => handleDrop(e, index) : undefined}
+                onClick={mode === 'transfer' ? () => setTransferMode({ customerId: customer.id, customerName: customer.name }) : undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   padding: '12px',
                   border: '1px solid #ddd',
                   borderRadius: '8px',
-                  backgroundColor: draggedCustomer?.id === customer.id ? '#f0f8ff' : 'white',
-                  cursor: 'move',
-                  transition: 'all 0.2s ease'
+                  backgroundColor: draggedCustomer?.id === customer.id ? '#f0f8ff' : 
+                                   mode === 'transfer' ? '#f8f9fa' : 'white',
+                  cursor: mode === 'reorder' ? 'move' : mode === 'transfer' ? 'pointer' : 'default',
+                  transition: 'all 0.2s ease',
+                  borderLeft: mode === 'transfer' ? '4px solid var(--primary)' : '1px solid #ddd'
                 }}
               >
                 {/* 順番表示 */}
@@ -182,13 +237,27 @@ export function CourseDetailPage() {
 
                 {/* 操作ボタン */}
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="ghost"
-                    onClick={() => setTransferMode({ customerId: customer.id, customerName: customer.name })}
-                    style={{ color: 'var(--primary)' }}
-                  >
-                    移動
-                  </button>
+                  {mode === 'reorder' && (
+                    <div style={{ 
+                      color: 'var(--muted)', 
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}>
+                      ⇅ ドラッグで移動
+                    </div>
+                  )}
+                  {mode === 'transfer' && (
+                    <div style={{ 
+                      color: 'var(--primary)', 
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      fontWeight: 'bold'
+                    }}>
+                      👆 クリックで移動
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

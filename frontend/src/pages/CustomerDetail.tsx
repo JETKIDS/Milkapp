@@ -19,6 +19,12 @@ export function CustomerDetailPage() {
 	// 請求書用の状態
 	const [invoiceHistory, setInvoiceHistory] = React.useState<any[]>([]);
 	const [invoiceLoading, setInvoiceLoading] = React.useState(false);
+	
+	// コース変更用の状態
+	const [showCourseModal, setShowCourseModal] = React.useState(false);
+	const [availableCourses, setAvailableCourses] = React.useState<any[]>([]);
+	const [selectedCourse, setSelectedCourse] = React.useState<number | null>(null);
+	const [courseLoading, setCourseLoading] = React.useState(false);
 
 	// 初期データ読み込み
 	React.useEffect(() => { (async () => {
@@ -56,6 +62,14 @@ export function CustomerDetailPage() {
 				setInvoiceHistory(historyData || []);
 			} catch (e) {
 				console.log('請求履歴の取得に失敗しました:', e);
+			}
+			
+			// 配達コース一覧を取得
+			try {
+				const coursesData = await getDataTyped(`/api/delivery-courses`) as any;
+				setAvailableCourses(coursesData || []);
+			} catch (e) {
+				console.log('配達コースの取得に失敗しました:', e);
 			}
 		} catch (error) {
 			console.error('Error loading customer detail:', error);
@@ -133,6 +147,39 @@ export function CustomerDetailPage() {
 	const formatCurrency = (n: number) => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(n);
 	const getDayName = (dayOfWeek: number) => ['日', '月', '火', '水', '木', '金', '土'][dayOfWeek];
 
+	// コース変更モーダルを開く
+	const openCourseModal = () => {
+		setSelectedCourse(detail?.data?.deliveryCourseId || null);
+		setShowCourseModal(true);
+	};
+
+	// コース変更を実行
+	const changeCourse = async () => {
+		if (!selectedCourse) {
+			toast.notify('error', 'コースを選択してください');
+			return;
+		}
+
+		try {
+			setCourseLoading(true);
+			await putDataTyped(`/api/customers/${customerId}`, {
+				deliveryCourseId: selectedCourse
+			});
+			
+			// 顧客データを更新
+			const updatedCustomer = { ...detail.data, deliveryCourseId: selectedCourse };
+			setDetail({ data: updatedCustomer });
+			
+			toast.notify('success', 'コースを変更しました');
+			setShowCourseModal(false);
+		} catch (error) {
+			console.error('コース変更エラー:', error);
+			toast.notify('error', 'コース変更に失敗しました');
+		} finally {
+			setCourseLoading(false);
+		}
+	};
+
 	// 今月の請求書を作成
 	const createMonthlyInvoice = async () => {
 		try {
@@ -181,8 +228,23 @@ export function CustomerDetailPage() {
 					<div style={{ fontSize: '16px', fontWeight: 'bold' }}>御請求書</div>
 					<div style={{ textAlign: 'right' }}>
 						<div>登録</div>
-						<div>「配達」Aコース</div>
+						<div>「配達」{availableCourses.find(c => c.id === detail?.data?.deliveryCourseId)?.name || 'コース未設定'}</div>
 						<div>「集金」A集金[1]-1</div>
+						<button
+							onClick={openCourseModal}
+							style={{
+								backgroundColor: '#4CAF50',
+								color: 'white',
+								border: 'none',
+								padding: '4px 8px',
+								borderRadius: '4px',
+								fontSize: '12px',
+								cursor: 'pointer',
+								marginTop: '4px'
+							}}
+						>
+							コース変更
+						</button>
 					</div>
 				</div>
 				
@@ -539,6 +601,95 @@ export function CustomerDetailPage() {
 					</div>
 				</div>
 			</div>
+
+			{/* コース変更モーダル */}
+			{showCourseModal && (
+				<div style={{ 
+					position: 'fixed', 
+					top: 0, 
+					left: 0, 
+					width: '100%', 
+					height: '100%', 
+					backgroundColor: 'rgba(0,0,0,0.5)', 
+					display: 'flex', 
+					alignItems: 'center', 
+					justifyContent: 'center',
+					zIndex: 1000
+				}}>
+					<div style={{
+						backgroundColor: 'white',
+						padding: '24px',
+						borderRadius: '8px',
+						minWidth: '400px',
+						maxWidth: '500px'
+					}}>
+						<h3 style={{ margin: '0 0 16px 0', color: '#333' }}>配達コース変更</h3>
+						
+						<div style={{ marginBottom: '16px' }}>
+							<label style={{ 
+								display: 'block', 
+								marginBottom: '8px', 
+								fontWeight: 'bold',
+								color: '#333'
+							}}>
+								新しいコースを選択してください:
+							</label>
+							<select
+								value={selectedCourse || ''}
+								onChange={(e) => setSelectedCourse(Number(e.target.value) || null)}
+								style={{
+									width: '100%',
+									padding: '8px 12px',
+									border: '1px solid #ccc',
+									borderRadius: '4px',
+									fontSize: '14px'
+								}}
+							>
+								<option value="">コースを選択...</option>
+								{availableCourses.map((course: any) => (
+									<option key={course.id} value={course.id}>
+										{course.name} {course.description ? `(${course.description})` : ''}
+									</option>
+								))}
+							</select>
+						</div>
+
+						<div style={{ 
+							display: 'flex', 
+							gap: '12px', 
+							justifyContent: 'flex-end' 
+						}}>
+							<button
+								onClick={() => setShowCourseModal(false)}
+								style={{
+									backgroundColor: '#ccc',
+									color: '#333',
+									border: 'none',
+									padding: '8px 16px',
+									borderRadius: '4px',
+									cursor: 'pointer'
+								}}
+							>
+								キャンセル
+							</button>
+							<button
+								onClick={changeCourse}
+								disabled={courseLoading || !selectedCourse}
+								style={{
+									backgroundColor: courseLoading || !selectedCourse ? '#ccc' : '#4CAF50',
+									color: 'white',
+									border: 'none',
+									padding: '8px 16px',
+									borderRadius: '4px',
+									cursor: courseLoading || !selectedCourse ? 'not-allowed' : 'pointer'
+								}}
+							>
+								{courseLoading ? '変更中...' : '変更'}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{loading && (
 				<div style={{ 
