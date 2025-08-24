@@ -5,7 +5,7 @@
 1) 依存インストール
 
 ```
-pnpm i
+npm i --workspaces
 ```
 
 2) 環境変数
@@ -19,20 +19,20 @@ DATABASE_URL="file:./dev.db"
 3) Prisma クライアント生成（postinstallで自動）
 
 ```
-pnpm -w backend run prisma:generate
+npm -w backend run prisma:generate
 ```
 
 4) マイグレーション適用とシード
 
 ```
-pnpm -w backend run db:migrate:dev
-pnpm -w backend run seed
+npm -w backend run db:migrate:dev
+npm -w backend run seed
 ```
 
 5) 実行
 
 ```
-pnpm -w backend run dev
+npm -w backend run dev
 ```
 
 ### フロントエンドの起動
@@ -67,31 +67,41 @@ npm run build:openapi
 # backend/openapi.json が生成されます
 ```
 
+### Windows / OneDrive ご利用時の注意
+
+- OneDrive 配下での作業中、Prisma の postinstall（`prisma generate`）で EPERM（リネーム不可）が発生する場合があります。
+  - 対処例: 一時的に OneDrive 同期を停止、またはリポジトリを `C:\Users\<あなた>\source` など同期外に移動
+  - フロント依存だけ入れたい場合は以下のようにスクリプト無効でインストール
+    ```
+    npm --prefix frontend install --ignore-scripts
+    ```
+- 本番等でバックエンドURLを分ける場合は、フロント `.env` に `VITE_API_BASE` を設定してください（未設定時は Vite の `/api` プロキシを利用）。
+
 ## 運用（2.1 マイグレーション運用）
 
 - 開発でスキーマ変更時
 
 ```
-pnpm -w backend run db:migrate:dev --name your_change
+npm -w backend run db:migrate:dev --name your_change
 ```
 
 - 本番/ステージングで適用
 
 ```
-pnpm -w backend run db:migrate:deploy
+npm -w backend run db:migrate:deploy
 ```
 
 - リセット（開発）
 
 ```
-pnpm -w backend run db:reset
-pnpm -w backend run seed
+npm -w backend run db:reset
+npm -w backend run seed
 ```
 
 ## テスト
 
 ```
-pnpm -w backend test
+npm -w backend test
 ```
 
 ## デモ手順（MVP）
