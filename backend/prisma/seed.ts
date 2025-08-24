@@ -75,7 +75,7 @@ async function seedCatalog() {
   return { manufacturers, products, courses };
 }
 
-async function seedCustomersAndContracts(products: { id: number; price: number }[], courses: { id: number }[]) {
+async function seedCustomersAndContracts(products: { id: number; price: number }[], courses: { id: number; name: string }[]) {
   // 顧客名候補
   const familyNames = ['佐藤', '鈴木', '高橋', '田中', '伊藤', '渡辺', '山本', '中村', '小林', '加藤'];
   const givenNames = ['太郎', '花子', '一郎', '次郎', '美咲', '陽菜', '大輔', '直樹', '由美', '恵'];
@@ -96,12 +96,30 @@ async function seedCustomersAndContracts(products: { id: number; price: number }
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
   for (let i = 1; i <= 50; i++) {
-    const name = `${familyNames[(i - 1) % familyNames.length]} ${givenNames[i % givenNames.length]}`;
+    // 名前は重複しにくい組み合わせで生成（姓は循環、名はブロック単位で進行）
+    const family = familyNames[(i - 1) % familyNames.length];
+    const given = givenNames[Math.floor((i - 1) / familyNames.length) % givenNames.length];
+    const name = `${family} ${given}`;
     const address = `東京都サンプル区${Math.ceil(i / 5)}-${(i % 5) + 1}-${(i % 9) + 1}`;
     const phone = `03-0000-${String(1000 + i).slice(-4)}`;
     const email = `user${i}@example.com`;
 
-    const course = courses[(i - 1) % courses.length];
+    // パターングループを均等に割当
+    let groupIndex = 0;
+    for (let gi = 0; gi < groups.length; gi++) {
+      if (groupCounts[gi] < groupTargets[gi]) {
+        groupIndex = gi;
+        break;
+      }
+    }
+    groupCounts[groupIndex]++;
+    const group = groups[groupIndex];
+
+    // コースは曜日に応じて 01/02/03 に自動振分
+    const course01 = courses.find(c => c.name === 'コース 01') ?? courses[0];
+    const course02 = courses.find(c => c.name === 'コース 02') ?? courses[1] ?? courses[0];
+    const course03 = courses.find(c => c.name === 'コース 03') ?? courses[2] ?? courses[0];
+    const course = (group.name === 'MonThu') ? course01 : (group.name === 'TueFri') ? course02 : course03;
     const customer = await prisma.customer.create({
       data: {
         name,
@@ -119,17 +137,6 @@ async function seedCustomersAndContracts(products: { id: number; price: number }
     await prisma.customerCoursePosition.create({
       data: { customerId: customer.id, deliveryCourseId: course.id, position: currentPos },
     });
-
-    // グループを均等に割当
-    let groupIndex = 0;
-    for (let gi = 0; gi < groups.length; gi++) {
-      if (groupCounts[gi] < groupTargets[gi]) {
-        groupIndex = gi;
-        break;
-      }
-    }
-    groupCounts[groupIndex]++;
-    const group = groups[groupIndex];
 
     // ランダムな商品と単価
     const product = pick(products);
