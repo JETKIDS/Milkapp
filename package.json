@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/recover.ps1",
+    "stop": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop.ps1",
     "test": "npm -w backend run test",
     "build": "npm -w backend run build",
     "recover": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/recover.ps1"

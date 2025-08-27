@@ -387,4 +387,72 @@ exports.reportsRepository = {
     async listInvoiceHistory(customerId) {
         return prisma_1.default.invoiceHistory.findMany({ where: { customerId }, orderBy: { issuedDate: 'desc' } });
     },
+    // 新機能: 指定コースに属する全顧客の請求書データをまとめて作成
+    async createInvoicesByCourse(input) {
+        const startDate = new Date(input.startDate);
+        const endDate = new Date(input.endDate);
+        // コース配下の顧客を取得
+        const customers = await prisma_1.default.customer.findMany({
+            where: { deliveryCourseId: input.courseId },
+            orderBy: { id: 'asc' },
+        });
+        const results = [];
+        for (const c of customers) {
+            // 顧客ごとに契約ベースで請求計算（createInvoice のロジックを再利用）
+            const contracts = await prisma_1.default.customerProductContract.findMany({
+                where: {
+                    customerId: c.id,
+                    isActive: true,
+                    startDate: { lte: endDate },
+                    OR: [
+                        { endDate: null },
+                        { endDate: { gte: startDate } },
+                    ],
+                },
+                include: { product: true, patterns: { where: { isActive: true } } },
+            });
+            let totalAmount = 0;
+            const invoiceDetails = [];
+            for (const contract of contracts) {
+                let deliveryCount = 0;
+                const currentDate = new Date(startDate);
+                while (currentDate <= endDate) {
+                    const dayOfWeek = currentDate.getDay();
+                    const pattern = contract.patterns.find((p) => p.dayOfWeek === dayOfWeek);
+                    if (pattern && pattern.quantity > 0) {
+                        deliveryCount += pattern.quantity;
+                    }
+                    currentDate.setDate(currentDate.getDate() + 1);
+                }
+                if (deliveryCount > 0) {
+                    const unitPrice = contract.unitPrice || contract.product.price;
+                    const amount = deliveryCount * unitPrice;
+                    totalAmount += amount;
+                    invoiceDetails.push({
+                        productName: contract.product.name,
+                        unitPrice,
+                        quantity: deliveryCount,
+                        amount,
+                    });
+                }
+            }
+            // 履歴に記録（顧客ごと）
+            await prisma_1.default.invoiceHistory.create({
+                data: {
+                    customerId: c.id,
+                    invoicePeriodStart: startDate,
+                    invoicePeriodEnd: endDate,
+                    totalAmount,
+                    issuedDate: new Date(),
+                },
+            });
+            results.push({
+                customerId: c.id,
+                customerName: c.name,
+                details: invoiceDetails,
+                totalAmount,
+            });
+        }
+        return results;
+    },
 };

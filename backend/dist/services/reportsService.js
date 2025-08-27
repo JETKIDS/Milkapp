@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.reportsService = exports.invoiceSchema = exports.listFilterSchema = void 0;
+exports.reportsService = exports.courseInvoiceSchema = exports.invoiceSchema = exports.listFilterSchema = void 0;
 const zod_1 = require("zod");
 const reportsRepository_1 = require("../repositories/reportsRepository");
+const pdfUtil_1 = require("../pdf/pdfUtil");
 exports.listFilterSchema = zod_1.z.object({
     startDate: zod_1.z.string().datetime().optional(),
     endDate: zod_1.z.string().datetime().optional(),
@@ -13,6 +14,11 @@ exports.listFilterSchema = zod_1.z.object({
 });
 exports.invoiceSchema = zod_1.z.object({
     customerId: zod_1.z.coerce.number().int().positive(),
+    startDate: zod_1.z.string().datetime(),
+    endDate: zod_1.z.string().datetime(),
+});
+exports.courseInvoiceSchema = zod_1.z.object({
+    courseId: zod_1.z.coerce.number().int().positive(),
     startDate: zod_1.z.string().datetime(),
     endDate: zod_1.z.string().datetime(),
 });
@@ -47,5 +53,24 @@ exports.reportsService = {
     },
     async invoiceHistory(customerId) {
         return reportsRepository_1.reportsRepository.listInvoiceHistory(customerId);
+    },
+    // 新機能: コース別請求書（複数顧客を1PDFに）
+    async createCourseInvoices(input) {
+        const data = exports.courseInvoiceSchema.parse(input);
+        const results = await reportsRepository_1.reportsRepository.createInvoicesByCourse(data);
+        const yen = (n) => `${Number(n ?? 0).toLocaleString('ja-JP')}円`;
+        const sections = results.map((r) => ({
+            title: `請求書 - ${r.customerName} 様`,
+            headers: ['商品名', '単価', '数量', '金額'],
+            rows: [
+                ...r.details.map((d) => [d.productName, yen(d.unitPrice), String(d.quantity), yen(d.amount)]),
+                ['', '', '合計', yen(r.totalAmount)],
+            ],
+        }));
+        // 明細が一切ない場合でも空PDFは返す
+        if (sections.length === 0) {
+            return (0, pdfUtil_1.generateTablePdf)('請求書（対象顧客なし）', ['項目'], [['該当する顧客がいません']]);
+        }
+        return (0, pdfUtil_1.generateMultiInvoicePdf)(sections);
     },
 };

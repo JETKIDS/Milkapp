@@ -330,6 +330,18 @@ router.get('/invoice-history/:customerId', async (req, res, next) => {
   }
 });
 
+// 新機能: コース別請求書（コース配下の全顧客を1PDFに）
+router.post('/invoice-by-course', async (req, res, next) => {
+  try {
+    const pdf = await reportsService.createCourseInvoices(req.body);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', pdf.length);
+    res.status(200).send(pdf);
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;
 
 

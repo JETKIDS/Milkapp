@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { reportsRepository } from '../repositories/reportsRepository';
-import { generateSimplePdf, generateTablePdf } from '../pdf/pdfUtil';
+import { generateSimplePdf, generateTablePdf, generateMultiInvoicePdf } from '../pdf/pdfUtil';
 
 export const listFilterSchema = z.object({
   startDate: z.string().datetime().optional(),
@@ -13,6 +13,12 @@ export const listFilterSchema = z.object({
 
 export const invoiceSchema = z.object({
   customerId: z.coerce.number().int().positive(),
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+});
+
+export const courseInvoiceSchema = z.object({
+  courseId: z.coerce.number().int().positive(),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
 });
@@ -53,6 +59,28 @@ export const reportsService = {
   },
   async invoiceHistory(customerId: number) {
     return reportsRepository.listInvoiceHistory(customerId);
+  },
+
+  // 新機能: コース別請求書（複数顧客を1PDFに）
+  async createCourseInvoices(input: unknown): Promise<Buffer> {
+    const data = courseInvoiceSchema.parse(input);
+    const results = await reportsRepository.createInvoicesByCourse(data);
+
+    const yen = (n: number) => `${Number(n ?? 0).toLocaleString('ja-JP')}円`;
+    const sections = results.map((r) => ({
+      title: `請求書 - ${r.customerName} 様`,
+      headers: ['商品名', '単価', '数量', '金額'],
+      rows: [
+        ...r.details.map((d) => [d.productName, yen(d.unitPrice), String(d.quantity), yen(d.amount)]),
+        ['', '', '合計', yen(r.totalAmount)],
+      ],
+    }));
+
+    // 明細が一切ない場合でも空PDFは返す
+    if (sections.length === 0) {
+      return generateTablePdf('請求書（対象顧客なし）', ['項目'], [['該当する顧客がいません']]);
+    }
+    return generateMultiInvoicePdf(sections);
   },
 };
 

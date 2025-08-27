@@ -88,7 +88,7 @@ router.put('/transfer-customer', async (req, res, next) => {
         if (!customer) {
             return res.status(404).json({ success: false, error: '顧客が見つかりません' });
         }
-        const fromCourseId = customer.deliveryCourseId;
+        const fromCourseId = customer.deliveryCourseId ?? 0;
         await deliveryCoursesService_1.deliveryCoursesService.transferCustomer(Number(customerId), fromCourseId, Number(targetCourseId));
         res.json({ success: true });
     }

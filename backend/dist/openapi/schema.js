@@ -156,6 +156,7 @@ function generateOpenApiDocument() {
     registry.register('ReportFilter', reportsService_1.listFilterSchema);
     registry.register('InvoiceInput', reportsService_1.invoiceSchema);
     registry.register('InvoiceHistory', InvoiceHistory);
+    registry.register('CourseInvoiceInput', reportsService_1.courseInvoiceSchema);
     registry.register('SuccessResponse', SuccessResponse);
     registry.register('ErrorResponse', ErrorResponse);
     // Paths (sample for customers and invoice history)
@@ -505,6 +506,14 @@ function generateOpenApiDocument() {
         summary: 'Generate invoice PDF',
         tags: ['Reports'],
         request: { params: zod_1.z.object({ customerId: zod_1.z.string() }), body: { content: { 'application/json': { schema: reportsService_1.invoiceSchema } } } },
+        responses: { 200: { description: 'OK', content: { 'application/pdf': { schema: PdfBinary } } } },
+    });
+    registry.registerPath({
+        method: 'post',
+        path: '/api/reports/invoice-by-course',
+        summary: 'Generate invoices by course (single PDF)',
+        tags: ['Reports'],
+        request: { body: { content: { 'application/json': { schema: reportsService_1.courseInvoiceSchema } } } },
         responses: { 200: { description: 'OK', content: { 'application/pdf': { schema: PdfBinary } } } },
     });
     // Dashboard
