@@ -408,6 +408,7 @@ export const reportsRepository = {
     
     let totalAmount = 0;
     const invoiceDetails: any[] = [];
+    const deliveriesByDate: Record<string, Array<{ productName: string; quantity: number }>> = {};
     
     // 各契約について期間内の配達予定を計算
     for (const contract of contracts) {
@@ -424,6 +425,12 @@ export const reportsRepository = {
         const pattern = contract.patterns.find(p => p.dayOfWeek === dayOfWeek);
         if (pattern && pattern.quantity > 0) {
           deliveryCount += pattern.quantity;
+          const y = currentDate.getFullYear();
+          const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+          const d = String(currentDate.getDate()).padStart(2, '0');
+          const key = `${y}-${m}-${d}`;
+          if (!deliveriesByDate[key]) deliveriesByDate[key] = [];
+          deliveriesByDate[key].push({ productName: contract.product.name, quantity: pattern.quantity });
         }
         
         // 次の日に進む
@@ -462,7 +469,8 @@ export const reportsRepository = {
     // 請求詳細も返す（PDFに使用）
     return {
       ...inv,
-      details: invoiceDetails
+      details: invoiceDetails,
+      deliveriesByDate,
     };
   },
 

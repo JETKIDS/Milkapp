@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { reportsService } from '../services/reportsService';
-import { generateSimplePdf, generateTablePdf, generateMultiCourseSchedulePdf } from '../pdf/pdfUtil';
+import { generateSimplePdf, generateTablePdf, generateMultiCourseSchedulePdf, generateMultiInvoicePdf } from '../pdf/pdfUtil';
 import prisma from '../lib/prisma';
 
 const router = Router();
@@ -265,56 +265,13 @@ router.post('/product-list', async (req, res, next) => {
 router.post('/invoice/:customerId', async (req, res, next) => {
   try {
     const customerId = Number(req.params.customerId);
-    const inv = await reportsService.createInvoice({ ...req.body, customerId });
-    
-    // 顧客情報を取得
-    const customer = await prisma.customer.findUnique({
-      where: { id: customerId },
-      select: { name: true }
-    });
-    
-    const formatJst = (d: string | Date) => {
-      const dt = new Date(d);
-      const y = dt.getFullYear();
-      const m = String(dt.getMonth() + 1).padStart(2, '0');
-      const day = String(dt.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
-    const yen = (n: number) => `${Number(n ?? 0).toLocaleString('ja-JP')}円`;
-    
-    // 詳細な請求書PDFを作成
-    if (inv.details && inv.details.length > 0) {
-      const title = `請求書 - ${customer?.name || '顧客'}様`;
-      const headers = ['商品名', '単価', '数量', '金額'];
-      const rows = inv.details.map((detail: any) => [
-        detail.productName,
-        yen(detail.unitPrice),
-        String(detail.quantity),
-        yen(detail.amount)
-      ]);
-      
-      // 合計行を追加
-      rows.push(['', '', '合計', yen(inv.totalAmount)]);
-      
-      const pdf = await generateTablePdf(title, headers, rows);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Length', pdf.length);
-      res.status(200).send(pdf);
-    } else {
-      // 詳細がない場合はシンプルな請求書
-      const lines = [
-        `お客様: ${customer?.name || '顧客'}`,
-        `請求期間: ${formatJst(inv.invoicePeriodStart)} ～ ${formatJst(inv.invoicePeriodEnd)}`,
-        `合計金額: ${yen(inv.totalAmount)}`,
-        `発行日: ${formatJst(inv.issuedDate)}`,
-        '',
-        '※契約データが見つかりませんでした',
-      ];
-      const pdf = await generateSimplePdf('請求書', lines);
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Length', pdf.length);
-      res.status(200).send(pdf);
-    }
+    // カスタムデザイン（A4横/上下2段×左右2列、3分割）
+    const { startDate, endDate } = req.body;
+    const section = await reportsService.buildInvoicePdfPayload(customerId, startDate, endDate);
+    const pdf = await generateMultiInvoicePdf([section]);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', pdf.length);
+    res.status(200).send(pdf);
   } catch (e) {
     next(e);
   }

@@ -81,11 +81,11 @@ export function CoursesPage() {
         try {
             setTransferLoading(true);
             const [sourceData, targetData] = await Promise.all([
-                getDataTyped(`/api/delivery-courses/${sourceCourse.id}/customers`),
-                getDataTyped(`/api/delivery-courses/${targetCourse.id}/customers`)
+                getDataTyped<any[]>(`/api/delivery-courses/${sourceCourse.id}/customers`),
+                getDataTyped<any[]>(`/api/delivery-courses/${targetCourse.id}/customers`)
             ]);
-            setSourceCustomers(sourceData || []);
-            setTargetCustomers(targetData || []);
+            setSourceCustomers(Array.isArray(sourceData) ? sourceData : []);
+            setTargetCustomers(Array.isArray(targetData) ? targetData : []);
         } catch (error) {
             toast.notify('error', '顧客データの取得に失敗しました');
         } finally {

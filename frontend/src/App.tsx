@@ -13,6 +13,7 @@ import { InvoicesPage } from './pages/Invoices';
 import { DashboardPage } from './pages/Dashboard';
 import { CustomerDetailPage } from './pages/CustomerDetail';
 import { RegisterPage } from './pages/Register';
+import { BankInfoPage } from './pages/BankInfo';
 
 function Layout() {
 	return (
@@ -51,6 +52,7 @@ export function App() {
 				<Route path="/customers" element={<CustomersPage />} />
 				<Route path="/customers/:id/contracts" element={<ContractsPage />} />
 				<Route path="/customers/:id/detail" element={<CustomerDetailPage />} />
+				<Route path="/customers/:id/bank" element={<BankInfoPage />} />
 				<Route path="/manufacturers" element={<ManufacturersPage />} />
 				<Route path="/products" element={<ProductsPage />} />
 				<Route path="/courses" element={<CoursesPage />} />

@@ -5,9 +5,10 @@ const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir } = req.query as any;
+    const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir, all } = req.query as any;
     const p = Number(page) || 1;
     const ps = Math.min(Number(pageSize) || 10, 100);
+    const returnAll = String(all).toLowerCase() === '1' || String(all).toLowerCase() === 'true';
     
     let where: any = {};
     const conditions: any[] = [];
@@ -42,10 +43,12 @@ router.get('/', async (req, res, next) => {
     
     const orderBy = sortKey ? { [String(sortKey)]: (String(sortDir) === 'desc' ? 'desc' : 'asc') } : { id: 'asc' } as any;
     const prisma = (await import('../lib/prisma')).default;
-    const [total, items] = await Promise.all([
-      prisma.customer.count({ where }),
-      prisma.customer.findMany({ where, orderBy, skip: (p - 1) * ps, take: ps }),
-    ]);
+    const total = await prisma.customer.count({ where });
+    const items = await prisma.customer.findMany({
+      where,
+      orderBy,
+      ...(returnAll ? {} : { skip: (p - 1) * ps, take: ps }),
+    });
     res.setHeader('X-Total-Count', String(total));
     res.json({ success: true, data: items });
   } catch (err) {

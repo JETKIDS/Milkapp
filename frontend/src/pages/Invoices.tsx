@@ -3,21 +3,20 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FormSelect } from '../components/FormSelect';
+import { FormTextField } from '../components/FormTextField';
 import { downloadBlob, postPdf } from '../lib/api';
 import { getDataTyped } from '../lib/typedApi';
 import { useToast } from '../components/Toast';
 
 const invoiceSchema = z.object({ 
   customerId: z.coerce.number().int().positive({ message: '顧客を選択してください' }), 
-  startDate: z.string().min(1, { message: '開始日を選択してください' }), 
-  endDate: z.string().min(1, { message: '終了日を選択してください' }) 
+  targetMonth: z.string().min(1, { message: '対象月を選択してください' }) 
 });
 type InvoiceValues = z.infer<typeof invoiceSchema>;
 
 const courseInvoiceSchema = z.object({
   courseId: z.coerce.number().int().positive({ message: 'コースを選択してください' }),
-  startDate: z.string().min(1, { message: '開始日を選択してください' }),
-  endDate: z.string().min(1, { message: '終了日を選択してください' })
+  targetMonth: z.string().min(1, { message: '対象月を選択してください' })
 });
 type CourseInvoiceValues = z.infer<typeof courseInvoiceSchema>;
 
@@ -35,24 +34,17 @@ export function InvoicesPage() {
 	const [loading, setLoading] = React.useState(true);
 
 	const now = React.useMemo(() => new Date(), []);
-	const defaultStartMonth = React.useMemo(() => startOfMonthUTC(now).toISOString(), [now]);
-	const defaultEndMonth = React.useMemo(() => endOfMonthUTC(now).toISOString(), [now]);
-
-    const dateOptions = React.useMemo(() => {
-        const thisMonthStart = startOfMonthUTC(now).toISOString();
-        const thisMonthEnd = endOfMonthUTC(now).toISOString();
-        return [
-            { value: thisMonthStart, label: '今月（開始ISO）' },
-            { value: thisMonthEnd, label: '今月（終了ISO）' },
-        ];
-    }, [now]);
+	const defaultTargetMonth = React.useMemo(() => {
+		const y = now.getUTCFullYear();
+		const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+		return `${y}-${m}`;
+	}, [now]);
 
 	const invForm = useForm<InvoiceValues>({ 
 		resolver: zodResolver(invoiceSchema), 
 		defaultValues: { 
-			customerId: 0, // デフォルト値を明示的に設定
-			startDate: defaultStartMonth, 
-			endDate: defaultEndMonth 
+			customerId: 0,
+			targetMonth: defaultTargetMonth 
 		} 
 	});
 
@@ -60,8 +52,7 @@ export function InvoicesPage() {
 		resolver: zodResolver(courseInvoiceSchema),
 		defaultValues: {
 			courseId: 0,
-			startDate: defaultStartMonth,
-			endDate: defaultEndMonth
+			targetMonth: defaultTargetMonth
 		}
 	});
 
@@ -92,10 +83,15 @@ export function InvoicesPage() {
 				return;
 			}
 
-			console.log('請求書作成開始:', v);
-            const blob = await postPdf(`/api/reports/invoice/${v.customerId}`, { 
-				startDate: v.startDate, 
-				endDate: v.endDate 
+			// 対象月から月初/月末を算出
+			const [yy, mm] = v.targetMonth.split('-').map((n) => Number(n));
+			const base = new Date(Date.UTC(yy, (mm || 1) - 1, 1, 0, 0, 0, 0));
+			const startIso = startOfMonthUTC(base).toISOString();
+			const endIso = endOfMonthUTC(base).toISOString();
+
+			const blob = await postPdf(`/api/reports/invoice/${v.customerId}`, { 
+				startDate: startIso, 
+				endDate: endIso 
 			});
             
 			const selectedCustomer = customers.find(c => c.id === v.customerId);
@@ -117,10 +113,16 @@ export function InvoicesPage() {
 				return;
 			}
 
+			// 対象月から月初/月末を算出
+			const [yy, mm] = v.targetMonth.split('-').map((n) => Number(n));
+			const base = new Date(Date.UTC(yy, (mm || 1) - 1, 1, 0, 0, 0, 0));
+			const startIso = startOfMonthUTC(base).toISOString();
+			const endIso = endOfMonthUTC(base).toISOString();
+
 			const blob = await postPdf(`/api/reports/invoice-by-course`, {
 				courseId: v.courseId,
-				startDate: v.startDate,
-				endDate: v.endDate,
+				startDate: startIso,
+				endDate: endIso,
 			});
 			const courseName = courses.find((c:any) => c.id === v.courseId)?.name ?? 'course';
 			const filename = `invoices_course_${courseName}_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -195,20 +197,13 @@ export function InvoicesPage() {
 							)}
 						</div>
 						
-						<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-							<FormSelect 
-								label="請求期間（開始）" 
-								{...invForm.register('startDate')} 
-								options={dateOptions} 
+						<div>
+							<FormTextField 
+								label="対象月" 
+								type="month" 
+								{...invForm.register('targetMonth')} 
 								style={{ fontSize: '16px' }}
-								error={invForm.formState.errors.startDate}
-							/>
-							<FormSelect 
-								label="請求期間（終了）" 
-								{...invForm.register('endDate')} 
-								options={dateOptions} 
-								style={{ fontSize: '16px' }}
-								error={invForm.formState.errors.endDate}
+								error={(invForm.formState.errors as any)?.targetMonth}
 							/>
 						</div>
 						
@@ -221,7 +216,7 @@ export function InvoicesPage() {
 							border: '1px solid #ffc107'
 						}}>
 							<div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#333' }}>📋 請求書について</div>
-							• 指定期間内の顧客の注文履歴を集計して請求書を作成します<br/>
+							• 対象月の注文履歴を集計して請求書を作成します<br/>
 							• 請求金額、請求期間、発行日が記載されます<br/>
 							• PDFファイルとしてダウンロードされます
 						</div>
@@ -295,20 +290,13 @@ export function InvoicesPage() {
 								error={courseForm.formState.errors.courseId}
 							/>
 						</div>
-						<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-							<FormSelect 
-								label="請求期間（開始）"
-								{...courseForm.register('startDate')}
-								options={dateOptions}
+						<div>
+							<FormTextField 
+								label="対象月"
+								type="month"
+								{...courseForm.register('targetMonth')}
 								style={{ fontSize: '16px' }}
-								error={courseForm.formState.errors.startDate}
-							/>
-							<FormSelect 
-								label="請求期間（終了）"
-								{...courseForm.register('endDate')}
-								options={dateOptions}
-								style={{ fontSize: '16px' }}
-								error={courseForm.formState.errors.endDate}
+								error={(courseForm.formState.errors as any)?.targetMonth}
 							/>
 						</div>
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { reportsRepository } from '../repositories/reportsRepository';
 import { generateSimplePdf, generateTablePdf, generateMultiInvoicePdf } from '../pdf/pdfUtil';
+import prisma from '../lib/prisma';
 
 export const listFilterSchema = z.object({
   startDate: z.string().datetime().optional(),
@@ -82,6 +83,40 @@ export const reportsService = {
     }
     return generateMultiInvoicePdf(sections);
   },
+
+  async buildInvoicePdfPayload(customerId: number, startDate: string, endDate: string) {
+    const inv = await reportsRepository.createInvoice({ customerId, startDate, endDate });
+    const store = await prisma.store.findFirst({ orderBy: { id: 'desc' } });
+    const customer = await prisma.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true, address: true } });
+
+    const start = new Date(startDate);
+    const month = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+
+    const days = Object.entries(inv.deliveriesByDate || {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, items]: any) => ({ date, items }));
+
+    const subtotal = Number(inv.totalAmount || 0);
+    const TAX_RATE = 0.10; // 税率（必要に応じて設定）
+    const tax = Math.floor(subtotal * TAX_RATE);
+    const total = subtotal + tax;
+
+    return {
+      title: `請求書 - ${customer?.name ?? '顧客'} 様`,
+      headers: ['商品名', '単価', '数量', '金額'],
+      rows: [
+        ...inv.details.map((d: any) => [d.productName, `${Number(d.unitPrice).toLocaleString('ja-JP')}円`, String(d.quantity), `${Number(d.amount).toLocaleString('ja-JP')}円`]),
+        ['', '', '合計', `${subtotal.toLocaleString('ja-JP')}円`],
+      ],
+      customer: { name: customer?.name ?? '', address: customer?.address ?? '' },
+      totals: { subtotal, tax, total },
+      calendar: {
+        month,
+        days,
+        footerStore: store ? { name: store.name, address: store.address, phone: store.phone } : undefined,
+      },
+    };
+  }
 };
 
 
