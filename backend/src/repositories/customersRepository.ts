@@ -5,6 +5,11 @@ export interface CreateCustomerInput {
   name: string;
   address: string;
   phone?: string | null;
+  collectionMethod?: string | null;
+  bankBranchCode7?: string | null;
+  accountNumber7?: string | null;
+  accountHolderKana?: string | null;
+  customerCode7?: string | null;
   email?: string | null;
   deliveryCourseId?: number | null;
 }

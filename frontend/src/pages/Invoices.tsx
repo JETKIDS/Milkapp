@@ -3,16 +3,22 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { FormSelect } from '../components/FormSelect';
+import { FormTextField } from '../components/FormTextField';
 import { downloadBlob, postPdf } from '../lib/api';
 import { getDataTyped } from '../lib/typedApi';
 import { useToast } from '../components/Toast';
 
 const invoiceSchema = z.object({ 
   customerId: z.coerce.number().int().positive({ message: '顧客を選択してください' }), 
-  startDate: z.string().min(1, { message: '開始日を選択してください' }), 
-  endDate: z.string().min(1, { message: '終了日を選択してください' }) 
+  targetMonth: z.string().min(1, { message: '対象月を選択してください' }) 
 });
 type InvoiceValues = z.infer<typeof invoiceSchema>;
+
+const courseInvoiceSchema = z.object({
+  courseId: z.coerce.number().int().positive({ message: 'コースを選択してください' }),
+  targetMonth: z.string().min(1, { message: '対象月を選択してください' })
+});
+type CourseInvoiceValues = z.infer<typeof courseInvoiceSchema>;
 
 function startOfMonthUTC(d: Date) { 
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0)); 
@@ -24,40 +30,45 @@ function endOfMonthUTC(d: Date) {
 export function InvoicesPage() {
 	const toast = useToast();
 	const [customers, setCustomers] = React.useState<any[]>([]);
+	const [courses, setCourses] = React.useState<any[]>([]);
 	const [loading, setLoading] = React.useState(true);
 
 	const now = React.useMemo(() => new Date(), []);
-	const defaultStartMonth = React.useMemo(() => startOfMonthUTC(now).toISOString(), [now]);
-	const defaultEndMonth = React.useMemo(() => endOfMonthUTC(now).toISOString(), [now]);
-
-    const dateOptions = React.useMemo(() => {
-        const thisMonthStart = startOfMonthUTC(now).toISOString();
-        const thisMonthEnd = endOfMonthUTC(now).toISOString();
-        return [
-            { value: thisMonthStart, label: '今月（開始ISO）' },
-            { value: thisMonthEnd, label: '今月（終了ISO）' },
-        ];
-    }, [now]);
+	const defaultTargetMonth = React.useMemo(() => {
+		const y = now.getUTCFullYear();
+		const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+		return `${y}-${m}`;
+	}, [now]);
 
 	const invForm = useForm<InvoiceValues>({ 
 		resolver: zodResolver(invoiceSchema), 
 		defaultValues: { 
-			customerId: 0, // デフォルト値を明示的に設定
-			startDate: defaultStartMonth, 
-			endDate: defaultEndMonth 
+			customerId: 0,
+			targetMonth: defaultTargetMonth 
 		} 
+	});
+
+	const courseForm = useForm<CourseInvoiceValues>({
+		resolver: zodResolver(courseInvoiceSchema),
+		defaultValues: {
+			courseId: 0,
+			targetMonth: defaultTargetMonth
+		}
 	});
 
     React.useEffect(() => { 
 		(async () => {
 			try {
 				setLoading(true);
-				const customersData = await getDataTyped<any[]>('/api/customers');
-				console.log('顧客データを取得しました:', customersData);
+				const [customersData, coursesData] = await Promise.all([
+					getDataTyped<any[]>('/api/customers'),
+					getDataTyped<any[]>('/api/delivery-courses')
+				]);
 				setCustomers(customersData);
+				setCourses(coursesData);
 			} catch (error) {
-				console.error('顧客データ取得エラー:', error);
-				toast.notify('error','顧客データの取得に失敗しました');
+				console.error('初期データ取得エラー:', error);
+				toast.notify('error','初期データの取得に失敗しました');
 			} finally {
 				setLoading(false);
 			}
@@ -72,10 +83,15 @@ export function InvoicesPage() {
 				return;
 			}
 
-			console.log('請求書作成開始:', v);
-            const blob = await postPdf(`/api/reports/invoice/${v.customerId}`, { 
-				startDate: v.startDate, 
-				endDate: v.endDate 
+			// 対象月から月初/月末を算出
+			const [yy, mm] = v.targetMonth.split('-').map((n) => Number(n));
+			const base = new Date(Date.UTC(yy, (mm || 1) - 1, 1, 0, 0, 0, 0));
+			const startIso = startOfMonthUTC(base).toISOString();
+			const endIso = endOfMonthUTC(base).toISOString();
+
+			const blob = await postPdf(`/api/reports/invoice/${v.customerId}`, { 
+				startDate: startIso, 
+				endDate: endIso 
 			});
             
 			const selectedCustomer = customers.find(c => c.id === v.customerId);
@@ -88,6 +104,34 @@ export function InvoicesPage() {
 			console.error('請求書作成エラー:', e);
             toast.notify('error', e?.message ?? '請求書PDFの出力に失敗しました');
         }
+	};
+
+	const downloadCourseInvoices = async (v: CourseInvoiceValues) => {
+		try {
+			if (!v.courseId || v.courseId <= 0) {
+				toast.notify('error', 'コースを選択してください');
+				return;
+			}
+
+			// 対象月から月初/月末を算出
+			const [yy, mm] = v.targetMonth.split('-').map((n) => Number(n));
+			const base = new Date(Date.UTC(yy, (mm || 1) - 1, 1, 0, 0, 0, 0));
+			const startIso = startOfMonthUTC(base).toISOString();
+			const endIso = endOfMonthUTC(base).toISOString();
+
+			const blob = await postPdf(`/api/reports/invoice-by-course`, {
+				courseId: v.courseId,
+				startDate: startIso,
+				endDate: endIso,
+			});
+			const courseName = courses.find((c:any) => c.id === v.courseId)?.name ?? 'course';
+			const filename = `invoices_course_${courseName}_${new Date().toISOString().split('T')[0]}.pdf`;
+			downloadBlob(blob, filename);
+			toast.notify('success', `コース「${courseName}」の請求書PDFをダウンロードしました`);
+		} catch (e: any) {
+			console.error('コース別請求書作成エラー:', e);
+			toast.notify('error', e?.message ?? 'コース別請求書PDFの出力に失敗しました');
+		}
 	};
 
 	return (
@@ -153,20 +197,13 @@ export function InvoicesPage() {
 							)}
 						</div>
 						
-						<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-							<FormSelect 
-								label="請求期間（開始）" 
-								{...invForm.register('startDate')} 
-								options={dateOptions} 
+						<div>
+							<FormTextField 
+								label="対象月" 
+								type="month" 
+								{...invForm.register('targetMonth')} 
 								style={{ fontSize: '16px' }}
-								error={invForm.formState.errors.startDate}
-							/>
-							<FormSelect 
-								label="請求期間（終了）" 
-								{...invForm.register('endDate')} 
-								options={dateOptions} 
-								style={{ fontSize: '16px' }}
-								error={invForm.formState.errors.endDate}
+								error={(invForm.formState.errors as any)?.targetMonth}
 							/>
 						</div>
 						
@@ -179,7 +216,7 @@ export function InvoicesPage() {
 							border: '1px solid #ffc107'
 						}}>
 							<div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#333' }}>📋 請求書について</div>
-							• 指定期間内の顧客の注文履歴を集計して請求書を作成します<br/>
+							• 対象月の注文履歴を集計して請求書を作成します<br/>
 							• 請求金額、請求期間、発行日が記載されます<br/>
 							• PDFファイルとしてダウンロードされます
 						</div>
@@ -221,22 +258,70 @@ export function InvoicesPage() {
 					</form>
 				</div>
 
-				{/* 今後の機能拡張用スペース */}
-				<div style={{
-					padding: '24px',
-					border: '1px dashed #ddd',
-					borderRadius: '8px',
-					backgroundColor: '#f8f9fa',
-					textAlign: 'center',
-					color: '#6c757d'
+				{/* コース別請求書セクション */}
+				<div style={{ 
+					padding: '32px',
+					border: '2px solid #17a2b8',
+					borderRadius: '12px',
+					backgroundColor: '#f0fdff',
+					marginBottom: '32px'
 				}}>
-					<h4 style={{ margin: '0 0 12px 0' }}>🚧 今後の機能</h4>
-					<p style={{ margin: 0, fontSize: '14px' }}>
-						• 請求書履歴の表示<br/>
-						• 一括請求書作成<br/>
-						• 請求書テンプレートの選択<br/>
-						• 支払い状況の管理
-					</p>
+					<h3 style={{ 
+						color: '#0c5460',
+						textAlign: 'center',
+						marginTop: 0,
+						marginBottom: '32px',
+						fontSize: '22px',
+						fontWeight: 'bold'
+					}}>
+						🧾 コース別 請求書一括作成（1PDFにまとめて出力）
+					</h3>
+
+					<form onSubmit={courseForm.handleSubmit(downloadCourseInvoices)} style={{
+						display: 'grid',
+						gap: 24
+					}}>
+						<div>
+							<FormSelect 
+								label="対象コース"
+								{...courseForm.register('courseId')}
+								options={courses.map((c:any)=>({ value: c.id, label: c.name }))}
+								style={{ fontSize: '16px' }}
+								error={courseForm.formState.errors.courseId}
+							/>
+						</div>
+						<div>
+							<FormTextField 
+								label="対象月"
+								type="month"
+								{...courseForm.register('targetMonth')}
+								style={{ fontSize: '16px' }}
+								error={(courseForm.formState.errors as any)?.targetMonth}
+							/>
+						</div>
+
+						<div style={{ textAlign: 'center', marginTop: '16px' }}>
+							<button 
+								type="submit"
+								disabled={loading || courses.length === 0}
+								style={{
+									backgroundColor: loading || courses.length === 0 ? '#6c757d' : '#17a2b8',
+									color: '#fff',
+									padding: '12px 36px',
+									fontSize: '16px',
+									fontWeight: 'bold',
+									border: 'none',
+									borderRadius: '8px',
+									cursor: loading || courses.length === 0 ? 'not-allowed' : 'pointer',
+									boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+									minWidth: '200px',
+									opacity: loading || courses.length === 0 ? 0.6 : 1
+								}}
+							>
+								{loading || courses.length === 0 ? '⏳ 読み込み中...' : '🧾 コース別請求書PDF作成'}
+							</button>
+						</div>
+					</form>
 				</div>
 			</div>
 		</div>

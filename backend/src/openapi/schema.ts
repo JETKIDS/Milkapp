@@ -5,7 +5,7 @@ import { deliveryCourseCreateSchema, deliveryCourseUpdateSchema } from '../servi
 import { scheduleCreateSchema, scheduleUpdateSchema } from '../services/schedulesService';
 import { orderCreateSchema, orderUpdateSchema } from '../services/ordersService';
 import { contractCreateSchema, contractUpdateSchema, patternCreateSchema, patternUpdateSchema } from '../services/contractsService';
-import { listFilterSchema, invoiceSchema } from '../services/reportsService';
+import { listFilterSchema, invoiceSchema, courseInvoiceSchema } from '../services/reportsService';
 import { z } from 'zod';
 
 export function generateOpenApiDocument() {
@@ -166,6 +166,7 @@ export function generateOpenApiDocument() {
   registry.register('ReportFilter', listFilterSchema);
   registry.register('InvoiceInput', invoiceSchema);
   registry.register('InvoiceHistory', InvoiceHistory);
+  registry.register('CourseInvoiceInput', courseInvoiceSchema);
   registry.register('SuccessResponse', SuccessResponse);
   registry.register('ErrorResponse', ErrorResponse);
 
@@ -525,6 +526,14 @@ export function generateOpenApiDocument() {
     summary: 'Generate invoice PDF',
     tags: ['Reports'],
     request: { params: z.object({ customerId: z.string() }), body: { content: { 'application/json': { schema: invoiceSchema } } } },
+    responses: { 200: { description: 'OK', content: { 'application/pdf': { schema: PdfBinary } } } },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/reports/invoice-by-course',
+    summary: 'Generate invoices by course (single PDF)',
+    tags: ['Reports'],
+    request: { body: { content: { 'application/json': { schema: courseInvoiceSchema } } } },
     responses: { 200: { description: 'OK', content: { 'application/pdf': { schema: PdfBinary } } } },
   });
 

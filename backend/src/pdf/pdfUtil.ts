@@ -290,4 +290,179 @@ export function generateMultiCourseSchedulePdf(
   });
 }
 
+// 新機能: 複数顧客の請求書を1つのPDFにまとめて出力（顧客ごとにセクション）
+export function generateMultiInvoicePdf(
+  sections: Array<{
+    title: string; // 例: "請求書 - 山田太郎 様"
+    headers: string[]; // ['商品名', '単価', '数量', '金額']
+    rows: string[][];  // 明細 + 最後に合計行
+    calendar?: { // 追加: カレンダー表示用の情報
+      month: string; // 'YYYY-MM'
+      days: Array<{ date: string; items: Array<{ productName: string; quantity: number }> }>; 
+      footerStore?: { name: string; address: string; phone?: string | null };
+    };
+    customer?: { name: string; address: string };
+    totals?: { subtotal: number; tax: number; total: number };
+  }>
+): Promise<Buffer> {
+  return new Promise((resolve) => {
+    // A4横向き
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 20 });
+    // Enable fontkit to support TTC/OTF/TTF
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (doc as any).registerFontkit?.(fontkit);
+    const chunks: Uint8Array[] = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks.map((u) => Buffer.from(u)))));
+
+    if (!tryRegisterJapaneseFont(doc)) {
+      doc.font('Helvetica');
+    }
+
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const startX = doc.page.margins.left;
+    const padding = 6;
+
+    // 1ページに上下2件（顧客2件）
+    const perPage = 2;
+    for (let i = 0; i < sections.length; i += perPage) {
+      if (i > 0) doc.addPage();
+      const slice = sections.slice(i, i + perPage);
+      const cellWidth = pageWidth;
+      const cellHeight = (doc.page.height - doc.page.margins.top - doc.page.margins.bottom) / 2 - 10; // 2段
+      const cellYPositions = [doc.page.margins.top, doc.page.margins.top + cellHeight + 20];
+
+      slice.forEach((section, idx) => {
+        // 上下のみ（左右分割はしない）
+        const row = idx; // 0=上, 1=下
+        const x0 = startX;
+        const y0 = cellYPositions[row];
+        const w = pageWidth;
+        const h = cellHeight;
+
+        // 外枠
+        doc.strokeColor('#cbd5e1').rect(x0, y0, w, h).stroke();
+
+        // 3分割: 入金票 / 領収書 / 請求書（横幅比 2 : 2 : 6）
+        const partWUnit = w / 10;
+        const parts = [
+          { title: '入金票', x: x0, width: partWUnit * 2 },
+          { title: '領収書', x: x0 + partWUnit * 2, width: partWUnit * 2 },
+          { title: '請求書', x: x0 + partWUnit * 4, width: partWUnit * 6 },
+        ];
+
+        // 各パートのヘッダー
+        parts.forEach(p => {
+          doc.save();
+          doc.rect(p.x, y0, p.width, 22).fill('#f1f5f9');
+          doc.restore();
+          doc.fontSize(12).text(p.title, p.x + 6, y0 + 6, { width: p.width - 12, align: 'center' });
+          doc.moveTo(p.x, y0 + 22).lineTo(p.x + p.width, y0 + 22).strokeColor('#cbd5e1').stroke();
+        });
+
+        // 明細（入金票/領収書はサマリ、請求書はカレンダー）
+        const baseY = y0 + 26;
+        const innerPadding = 6;
+
+        // 左: 入金票（宛名・住所・合計）
+        {
+          const p = parts[0];
+          doc.fontSize(10);
+          if (section.customer) {
+            doc.text(`${section.customer.name} 様`, p.x + innerPadding, baseY, { width: p.width - innerPadding * 2 });
+            doc.text(section.customer.address, p.x + innerPadding, baseY + 14, { width: p.width - innerPadding * 2 });
+          }
+          // 合計行（最後の行に合計が入っている想定）
+          const last = section.rows[section.rows.length - 1];
+          const total = last?.[3] ?? '';
+          doc.text(`御請求額: ${total}`, p.x + innerPadding, baseY + 32, { width: p.width - innerPadding * 2 });
+        }
+
+        // 中: 領収書（宛名/金額/但し書き/店舗名）
+        {
+          const p = parts[1];
+          doc.fontSize(10);
+          const last = section.rows[section.rows.length - 1];
+          const total = last?.[3] ?? '';
+          if (section.customer) doc.text(`${section.customer.name} 様`, p.x + innerPadding, baseY, { width: p.width - innerPadding * 2 });
+          doc.text('但し 品代として', p.x + innerPadding, baseY + 14, { width: p.width - innerPadding * 2 });
+          doc.fontSize(12).text(`領収金額: ${total}`, p.x + innerPadding, baseY + 30, { width: p.width - innerPadding * 2 });
+          if (section.calendar?.footerStore?.name) {
+            doc.fontSize(9).text(
+              `発行: ${section.calendar.footerStore.name}`,
+              p.x + innerPadding,
+              baseY + 48,
+              { width: p.width - innerPadding * 2 }
+            );
+          }
+        }
+
+        // 右: 請求書（カレンダー + 店舗名）
+        {
+          const p = parts[2];
+          const cal = section.calendar;
+          if (cal) {
+            const gridX = p.x + innerPadding;
+            const gridY = baseY;
+            const gridW = p.width - innerPadding * 2;
+            const gridH = h - (gridY - y0) - 40; // フッター分余白
+            const cols = 7;
+            const rows = 6;
+            const cw = gridW / cols;
+            const ch = gridH / rows;
+
+            // 月と開始曜日を計算
+            const [yy, mm] = cal.month.split('-').map(n => Number(n));
+            const first = new Date(Date.UTC(yy, (mm || 1) - 1, 1));
+            const startDow = first.getUTCDay();
+            const daysInMonth = new Date(Date.UTC(yy, (mm || 1), 0)).getUTCDate();
+
+            // 日付→品目一覧
+            const map = new Map<string, { productName: string; quantity: number }[]>();
+            cal.days.forEach(d => map.set(d.date, d.items));
+
+            // グリッド描画
+            for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                const x = gridX + c * cw;
+                const y = gridY + r * ch;
+                doc.strokeColor('#e2e8f0').rect(x, y, cw, ch).stroke();
+
+                const idx = r * cols + c;
+                const day = idx - startDow + 1;
+                if (day >= 1 && day <= daysInMonth) {
+                  const dstr = `${yy}-${String(mm).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  doc.fontSize(9).text(String(day), x + 3, y + 3, { width: cw - 6, align: 'right' });
+                  const items = map.get(dstr) || [];
+                  let yyText = y + 14;
+                  doc.fontSize(8);
+                  for (const it of items) {
+                    const line = `${it.productName} ×${it.quantity}`;
+                    doc.text(line, x + 4, yyText, { width: cw - 8 });
+                    yyText += 10;
+                    if (yyText > y + ch - 10) break;
+                  }
+                }
+              }
+            }
+
+            // フッター: 店舗情報（店舗名・住所・電話）
+            if (cal.footerStore) {
+              const footerY = y0 + h - 16;
+              doc.fontSize(9).text(
+                `${cal.footerStore.name}  ${cal.footerStore.address}${cal.footerStore.phone ? '  TEL: ' + cal.footerStore.phone : ''}`,
+                p.x + innerPadding,
+                footerY,
+                { width: p.width - innerPadding * 2, align: 'center' }
+              );
+            }
+          }
+        }
+      });
+    }
+
+    doc.end();
+  });
+}
+
 

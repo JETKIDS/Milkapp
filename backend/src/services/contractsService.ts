@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { contractsRepository } from '../repositories/contractsRepository';
+import prisma from '../lib/prisma';
+import { deliveryCoursesRepository } from '../repositories/deliveryCoursesRepository';
 
 export const contractCreateSchema = z.object({
   customerId: z.number().int().positive().optional(),
@@ -33,7 +35,9 @@ export const contractsService = {
   },
   async createContract(customerId: number, input: unknown) {
     const data = contractCreateSchema.parse(input);
-    return contractsRepository.createContract({ ...data, customerId });
+    const contract = await contractsRepository.createContract({ ...data, customerId });
+    await autoAssignCourseForCustomerByPatterns(customerId);
+    return contract;
   },
   async updateContract(id: number, input: unknown) {
     const data = contractUpdateSchema.parse(input);
@@ -48,15 +52,72 @@ export const contractsService = {
   },
   async createPattern(input: unknown) {
     const data = patternCreateSchema.parse(input);
-    return contractsRepository.createPattern(data);
+    const created = await contractsRepository.createPattern(data);
+    // パターン変更に応じてコース自動割当を更新
+    const contract = await prisma.customerProductContract.findUnique({ where: { id: data.contractId }, select: { customerId: true } });
+    if (contract?.customerId) {
+      await autoAssignCourseForCustomerByPatterns(contract.customerId);
+    }
+    return created;
   },
   async updatePattern(id: number, input: unknown) {
     const data = patternUpdateSchema.parse(input);
-    return contractsRepository.updatePattern(id, data);
+    const updated = await contractsRepository.updatePattern(id, data);
+    // パターン変更に応じてコース自動割当を更新
+    const pattern = await prisma.deliveryPattern.findUnique({ where: { id }, select: { contractId: true } });
+    if (pattern?.contractId) {
+      const contract = await prisma.customerProductContract.findUnique({ where: { id: pattern.contractId }, select: { customerId: true } });
+      if (contract?.customerId) {
+        await autoAssignCourseForCustomerByPatterns(contract.customerId);
+      }
+    }
+    return updated;
   },
   async removePattern(id: number) {
     await contractsRepository.removePattern(id);
   },
 };
+
+async function autoAssignCourseForCustomerByPatterns(customerId: number): Promise<void> {
+  // 顧客の全契約に紐づく配達パターンを取得
+  const patterns = await prisma.deliveryPattern.findMany({
+    where: { contract: { customerId } },
+    select: { dayOfWeek: true },
+  });
+
+  const hasMon = patterns.some(p => p.dayOfWeek === 1);
+  const hasThu = patterns.some(p => p.dayOfWeek === 4);
+  const hasTue = patterns.some(p => p.dayOfWeek === 2);
+  const hasFri = patterns.some(p => p.dayOfWeek === 5);
+  const hasWed = patterns.some(p => p.dayOfWeek === 3);
+  const hasSat = patterns.some(p => p.dayOfWeek === 6);
+
+  let targetCourseId: number | null = null;
+
+  // コース候補を取得（名前で優先、なければID昇順の先頭3件）
+  const namedCourses = await prisma.deliveryCourse.findMany({ where: { name: { in: ['コース 01', 'コース 02', 'コース 03'] } }, orderBy: { id: 'asc' } });
+  let course1 = namedCourses.find(c => c.name === 'コース 01');
+  let course2 = namedCourses.find(c => c.name === 'コース 02');
+  let course3 = namedCourses.find(c => c.name === 'コース 03');
+  if (!course1 || !course2 || !course3) {
+    const firstThree = await prisma.deliveryCourse.findMany({ orderBy: { id: 'asc' }, take: 3 });
+    course1 = course1 ?? firstThree[0];
+    course2 = course2 ?? firstThree[1];
+    course3 = course3 ?? firstThree[2];
+  }
+
+  if (hasMon && hasThu && course1) targetCourseId = course1.id;
+  else if (hasTue && hasFri && course2) targetCourseId = course2.id;
+  else if (hasWed && hasSat && course3) targetCourseId = course3.id;
+
+  if (!targetCourseId) return;
+
+  const customer = await prisma.customer.findUnique({ where: { id: customerId }, select: { deliveryCourseId: true } });
+  if (customer?.deliveryCourseId === targetCourseId) return; // 変更不要
+
+  const fromCourseId = customer?.deliveryCourseId ?? 0;
+  // 末尾に追加
+  await deliveryCoursesRepository.transferCustomer(customerId, fromCourseId, targetCourseId);
+}
 
 

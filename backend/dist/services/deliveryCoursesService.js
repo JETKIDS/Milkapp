@@ -13,6 +13,9 @@ exports.deliveryCoursesService = {
     async list() {
         return deliveryCoursesRepository_1.deliveryCoursesRepository.list();
     },
+    async getById(id) {
+        return deliveryCoursesRepository_1.deliveryCoursesRepository.getById(id);
+    },
     async create(input) {
         const data = exports.deliveryCourseCreateSchema.parse(input);
         return deliveryCoursesRepository_1.deliveryCoursesRepository.create(data);
@@ -30,5 +33,17 @@ exports.deliveryCoursesService = {
             throw err;
         }
         await deliveryCoursesRepository_1.deliveryCoursesRepository.remove(id);
+    },
+    // コース内顧客一覧取得（順番付き）
+    async getCourseCustomers(courseId) {
+        return deliveryCoursesRepository_1.deliveryCoursesRepository.getCourseCustomers(courseId);
+    },
+    // コース内顧客の順番変更
+    async reorderCustomers(courseId, customerIds) {
+        return deliveryCoursesRepository_1.deliveryCoursesRepository.reorderCustomers(courseId, customerIds);
+    },
+    // 顧客のコース間移動
+    async transferCustomer(customerId, fromCourseId, toCourseId, position) {
+        return deliveryCoursesRepository_1.deliveryCoursesRepository.transferCustomer(customerId, fromCourseId, toCourseId, position);
     },
 };

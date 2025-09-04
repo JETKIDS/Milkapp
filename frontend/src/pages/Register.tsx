@@ -33,7 +33,7 @@ const customerSchema = z.object({
 	
 	// 配達・集金情報
 	deliveryCourseId: z.number().optional(),
-	collectionMethod: z.enum(['cash', 'transfer', 'other']).optional(),
+	collectionMethod: z.enum(['cash', 'direct_debit', 'credit']).optional(),
 	
 	// 契約情報
 	contractStatus: z.enum(['active', 'suspended', 'terminated']).default('active'),
@@ -78,14 +78,22 @@ const courseSchema = z.object({
 	description: z.string().optional(),
 });
 
+// 店舗登録のスキーマ
+const storeSchema = z.object({
+    name: z.string().min(1, '店舗名は必須です'),
+    address: z.string().min(1, '住所は必須です'),
+    phone: z.string().optional(),
+});
+
 type CustomerFormValues = z.infer<typeof customerSchema>;
 type ManufacturerFormValues = z.infer<typeof manufacturerSchema>;
 type ProductFormValues = z.infer<typeof productSchema>;
 type CourseFormValues = z.infer<typeof courseSchema>;
+type StoreFormValues = z.infer<typeof storeSchema>;
 
 export function RegisterPage() {
 	const toast = useToast();
-	const [activeTab, setActiveTab] = React.useState<'customer' | 'manufacturer' | 'product' | 'course'>('customer');
+	const [activeTab, setActiveTab] = React.useState<'customer' | 'manufacturer' | 'product' | 'course' | 'store'>('customer');
 	const [manufacturers, setManufacturers] = React.useState<any[]>([]);
 	const [deliveryCourses, setDeliveryCourses] = React.useState<any[]>([]);
 	const [loadingManufacturers, setLoadingManufacturers] = React.useState(false);
@@ -104,6 +112,7 @@ export function RegisterPage() {
 	const manufacturerForm = useForm<ManufacturerFormValues>({ resolver: zodResolver(manufacturerSchema) });
 	const productForm = useForm<ProductFormValues>({ resolver: zodResolver(productSchema) });
 	const courseForm = useForm<CourseFormValues>({ resolver: zodResolver(courseSchema) });
+	const storeForm = useForm<StoreFormValues>({ resolver: zodResolver(storeSchema) });
 
 	// データの取得
 	React.useEffect(() => {
@@ -150,6 +159,7 @@ export function RegisterPage() {
 				phone: v.phone || null,
 				email: v.email || null,
 				deliveryCourseId: v.deliveryCourseId || null,
+				collectionMethod: v.collectionMethod || null,
 			};
 			await postDataTyped('/api/customers', customerData);
 			toast.notify('success', `顧客を登録しました${v.customId ? `（ID: ${v.customId}）` : ''}`);
@@ -223,6 +233,18 @@ export function RegisterPage() {
 		}
 	};
 
+	// 店舗登録
+	const onSubmitStore = async (v: StoreFormValues) => {
+		try {
+			const payload = { name: v.name, address: v.address, phone: v.phone || null };
+			await postDataTyped('/api/stores', payload);
+			toast.notify('success', '店舗を登録しました');
+			storeForm.reset();
+		} catch (error: any) {
+			toast.notify('error', error?.message ?? '店舗の登録に失敗しました');
+		}
+	};
+
 	return (
 		<div className="card">
 			<div className="toolbar">
@@ -254,6 +276,12 @@ export function RegisterPage() {
 					onClick={() => setActiveTab('course')}
 				>
 					🗺️ 配達コース
+				</button>
+				<button 
+					className={`tab${activeTab === 'store' ? ' active' : ''}`} 
+					onClick={() => setActiveTab('store')}
+				>
+					🏪 店舗
 				</button>
 			</div>
 
@@ -398,9 +426,9 @@ export function RegisterPage() {
 									error={customerForm.formState.errors.collectionMethod}
 									options={[
 										{ value: '', label: '集金方法を選択' },
-										{ value: 'cash', label: '現金集金' },
-										{ value: 'transfer', label: '銀行振込' },
-										{ value: 'other', label: 'その他' }
+										{ value: 'cash', label: '現金' },
+										{ value: 'direct_debit', label: '口座引き落とし' },
+										{ value: 'credit', label: 'クレジット払い' }
 									]}
 								/>
 							</div>
@@ -693,6 +721,39 @@ export function RegisterPage() {
 						</button>
 						<button type="submit" disabled={courseForm.formState.isSubmitting} style={{ minWidth: 120 }}>
 							{courseForm.formState.isSubmitting ? '登録中...' : '配達コースを登録'}
+						</button>
+					</div>
+				</form>
+			)}
+
+			{/* 店舗登録フォーム */}
+			{activeTab === 'store' && (
+				<form onSubmit={storeForm.handleSubmit(onSubmitStore)} style={{ display: 'grid', gap: 24, maxWidth: 600 }}>
+					<div className="form-section">
+						<h3 style={{ margin: '0 0 16px 0', borderBottom: '2px solid var(--primary)', paddingBottom: 8 }}>店舗情報</h3>
+						<FormTextField 
+							label="店舗名" 
+							{...storeForm.register('name')}
+							error={storeForm.formState.errors.name}
+						/>
+						<FormTextField 
+							label="住所" 
+							{...storeForm.register('address')}
+							error={storeForm.formState.errors.address}
+						/>
+						<FormTextField 
+							label="電話番号（任意）" 
+							{...storeForm.register('phone')}
+							error={storeForm.formState.errors.phone as any}
+						/>
+					</div>
+
+					<div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+						<button type="button" className="ghost" onClick={() => storeForm.reset()}>
+							リセット
+						</button>
+						<button type="submit" disabled={storeForm.formState.isSubmitting} style={{ minWidth: 120 }}>
+							{storeForm.formState.isSubmitting ? '登録中...' : '店舗を登録'}
 						</button>
 					</div>
 				</form>

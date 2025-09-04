@@ -7,9 +7,9 @@ exports.createCustomerSchema = zod_1.z.object({
     id: zod_1.z.number().int().positive().optional(),
     name: zod_1.z.string().min(1),
     address: zod_1.z.string().min(1),
-    phone: zod_1.z.string().optional(),
-    email: zod_1.z.string().email().optional(),
-    deliveryCourseId: zod_1.z.number().int().positive().optional(),
+    phone: zod_1.z.string().optional().nullable(),
+    email: zod_1.z.string().email().optional().nullable().or(zod_1.z.literal('')),
+    deliveryCourseId: zod_1.z.number().int().positive().optional().nullable(),
 });
 exports.updateCustomerSchema = exports.createCustomerSchema.partial();
 exports.customersService = {

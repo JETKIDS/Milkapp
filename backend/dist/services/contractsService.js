@@ -1,8 +1,13 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.contractsService = exports.patternUpdateSchema = exports.patternCreateSchema = exports.contractUpdateSchema = exports.contractCreateSchema = void 0;
 const zod_1 = require("zod");
 const contractsRepository_1 = require("../repositories/contractsRepository");
+const prisma_1 = __importDefault(require("../lib/prisma"));
+const deliveryCoursesRepository_1 = require("../repositories/deliveryCoursesRepository");
 exports.contractCreateSchema = zod_1.z.object({
     customerId: zod_1.z.number().int().positive().optional(),
     productId: zod_1.z.number().int().positive(),
@@ -33,7 +38,9 @@ exports.contractsService = {
     },
     async createContract(customerId, input) {
         const data = exports.contractCreateSchema.parse(input);
-        return contractsRepository_1.contractsRepository.createContract({ ...data, customerId });
+        const contract = await contractsRepository_1.contractsRepository.createContract({ ...data, customerId });
+        await autoAssignCourseForCustomerByPatterns(customerId);
+        return contract;
     },
     async updateContract(id, input) {
         const data = exports.contractUpdateSchema.parse(input);
@@ -47,13 +54,67 @@ exports.contractsService = {
     },
     async createPattern(input) {
         const data = exports.patternCreateSchema.parse(input);
-        return contractsRepository_1.contractsRepository.createPattern(data);
+        const created = await contractsRepository_1.contractsRepository.createPattern(data);
+        // パターン変更に応じてコース自動割当を更新
+        const contract = await prisma_1.default.customerProductContract.findUnique({ where: { id: data.contractId }, select: { customerId: true } });
+        if (contract?.customerId) {
+            await autoAssignCourseForCustomerByPatterns(contract.customerId);
+        }
+        return created;
     },
     async updatePattern(id, input) {
         const data = exports.patternUpdateSchema.parse(input);
-        return contractsRepository_1.contractsRepository.updatePattern(id, data);
+        const updated = await contractsRepository_1.contractsRepository.updatePattern(id, data);
+        // パターン変更に応じてコース自動割当を更新
+        const pattern = await prisma_1.default.deliveryPattern.findUnique({ where: { id }, select: { contractId: true } });
+        if (pattern?.contractId) {
+            const contract = await prisma_1.default.customerProductContract.findUnique({ where: { id: pattern.contractId }, select: { customerId: true } });
+            if (contract?.customerId) {
+                await autoAssignCourseForCustomerByPatterns(contract.customerId);
+            }
+        }
+        return updated;
     },
     async removePattern(id) {
         await contractsRepository_1.contractsRepository.removePattern(id);
     },
 };
+async function autoAssignCourseForCustomerByPatterns(customerId) {
+    // 顧客の全契約に紐づく配達パターンを取得
+    const patterns = await prisma_1.default.deliveryPattern.findMany({
+        where: { contract: { customerId } },
+        select: { dayOfWeek: true },
+    });
+    const hasMon = patterns.some(p => p.dayOfWeek === 1);
+    const hasThu = patterns.some(p => p.dayOfWeek === 4);
+    const hasTue = patterns.some(p => p.dayOfWeek === 2);
+    const hasFri = patterns.some(p => p.dayOfWeek === 5);
+    const hasWed = patterns.some(p => p.dayOfWeek === 3);
+    const hasSat = patterns.some(p => p.dayOfWeek === 6);
+    let targetCourseId = null;
+    // コース候補を取得（名前で優先、なければID昇順の先頭3件）
+    const namedCourses = await prisma_1.default.deliveryCourse.findMany({ where: { name: { in: ['コース 01', 'コース 02', 'コース 03'] } }, orderBy: { id: 'asc' } });
+    let course1 = namedCourses.find(c => c.name === 'コース 01');
+    let course2 = namedCourses.find(c => c.name === 'コース 02');
+    let course3 = namedCourses.find(c => c.name === 'コース 03');
+    if (!course1 || !course2 || !course3) {
+        const firstThree = await prisma_1.default.deliveryCourse.findMany({ orderBy: { id: 'asc' }, take: 3 });
+        course1 = course1 ?? firstThree[0];
+        course2 = course2 ?? firstThree[1];
+        course3 = course3 ?? firstThree[2];
+    }
+    if (hasMon && hasThu && course1)
+        targetCourseId = course1.id;
+    else if (hasTue && hasFri && course2)
+        targetCourseId = course2.id;
+    else if (hasWed && hasSat && course3)
+        targetCourseId = course3.id;
+    if (!targetCourseId)
+        return;
+    const customer = await prisma_1.default.customer.findUnique({ where: { id: customerId }, select: { deliveryCourseId: true } });
+    if (customer?.deliveryCourseId === targetCourseId)
+        return; // 変更不要
+    const fromCourseId = customer?.deliveryCourseId ?? 0;
+    // 末尾に追加
+    await deliveryCoursesRepository_1.deliveryCoursesRepository.transferCustomer(customerId, fromCourseId, targetCourseId);
+}

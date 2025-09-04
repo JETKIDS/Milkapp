@@ -12,6 +12,11 @@ model Customer {
   name             String
   address          String
   phone            String?
+  collectionMethod String?
+  bankBranchCode7  String?
+  accountNumber7   String?
+  accountHolderKana String?
+  customerCode7    String?
   email            String?
   deliveryCourseId Int?
   createdAt        DateTime  @default(now())
@@ -157,5 +162,14 @@ model DeliveryPattern {
   updatedAt   DateTime  @updatedAt
 
   contract    CustomerProductContract @relation(fields: [contractId], references: [id])
+}
+
+model Store {
+  id        Int      @id @default(autoincrement())
+  name      String
+  address   String
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
