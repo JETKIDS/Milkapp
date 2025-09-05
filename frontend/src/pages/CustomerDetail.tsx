@@ -31,6 +31,28 @@ export function CustomerDetailPage() {
 	const [selectedCourse, setSelectedCourse] = React.useState<number | null>(null);
 	const [courseLoading, setCourseLoading] = React.useState(false);
 	const [coursePosition, setCoursePosition] = React.useState<number | null>(null);
+	const dayRowRef = React.useRef<HTMLDivElement | null>(null);
+	const [dayCellWidth, setDayCellWidth] = React.useState<number | null>(null);
+	const sidebarDragRef = React.useRef<{ isDragging: boolean; startX: number; startY: number }>({ isDragging: false, startX: 0, startY: 0 });
+	const [sidebarDragOffset, setSidebarDragOffset] = React.useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+	React.useEffect(() => {
+		const onMove = (e: MouseEvent) => {
+			if (!sidebarDragRef.current.isDragging) return;
+			setSidebarDragOffset({
+				dx: e.clientX - sidebarDragRef.current.startX,
+				dy: e.clientY - sidebarDragRef.current.startY,
+			});
+		};
+		const onUp = () => {
+			if (sidebarDragRef.current.isDragging) sidebarDragRef.current.isDragging = false;
+		};
+		window.addEventListener('mousemove', onMove as any);
+		window.addEventListener('mouseup', onUp);
+		return () => {
+			window.removeEventListener('mousemove', onMove as any);
+			window.removeEventListener('mouseup', onUp);
+		};
+	}, []);
 
 	// bank modal state and handlers
 	const bankSchema = z.object({
@@ -144,6 +166,16 @@ export function CustomerDetailPage() {
 			generateCalendarData(contracts);
 		}
 	}, [currentDate, contracts]);
+
+	// 前半（日付行）の1セル幅を測定し、後半にも適用
+	React.useEffect(() => {
+		if (dayRowRef.current) {
+			const firstCell = dayRowRef.current.querySelector('.day-cell') as HTMLElement | null;
+			if (firstCell) {
+				setDayCellWidth(firstCell.getBoundingClientRect().width);
+			}
+		}
+	}, [calendarData, currentDate, contracts]);
 
 	// カレンダーデータ生成
 	const generateCalendarData = (contractsData: any[]) => {
@@ -407,11 +439,11 @@ export function CustomerDetailPage() {
 				</div>
 
 				{/* カレンダー部分 */}
-				<div style={{ backgroundColor: 'white', border: '1px solid #ccc' }}>
+				<div style={{ backgroundColor: 'white', border: '1px solid #ccc', fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif' }}>
 					{/* 商品名を左側に表示 */}
 					<div style={{ display: 'flex' }}>
 						{/* 商品名列 */}
-						<div style={{ minWidth: '150px', borderRight: '1px solid #ccc' }}>
+						<div style={{ minWidth: '225px', borderRight: '1px solid #ccc' }}>
 							<div style={{ 
 								padding: '2px', 
 								border: '1px solid #ccc', 
@@ -437,12 +469,10 @@ export function CustomerDetailPage() {
 									flexDirection: 'column',
 									justifyContent: 'center'
 								}}>
-									<div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: '14px', height: '14px', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 4px' }}>
-										{index + 1}. {contract.product?.name || `商品ID: ${contract.productId}`}
+									<div style={{ fontWeight: 'bold', fontSize: '14px', lineHeight: '14px', height: '14px', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 4px' }}>
+										{contract.product?.name || `商品ID: ${contract.productId}`}
 									</div>
-									<div style={{ color: '#666', fontSize: '10px', lineHeight: '14px', height: '14px', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 4px' }}>
-										単価: {formatCurrency(contract.unitPrice || contract.product?.price || 0)}
-									</div>
+									{/* 単価表示は非表示 */}
 								</div>
 							))}
 							</div>
@@ -454,10 +484,10 @@ export function CustomerDetailPage() {
 								const firstHalf = calendarData.filter(d => d.day <= 15);
 								const secondHalf = calendarData.filter(d => d.day > 15);
 
-								const renderSection = (daysArr: any[], tight?: boolean) => (
+								const renderSection = (daysArr: any[], tight?: boolean, rowRef?: any, isSecondHalf?: boolean) => (
 									<>
 										{/* カレンダーヘッダー（曜日） */}
-										<div style={{ display: 'grid', gridTemplateColumns: `repeat(${daysArr.length}, 1fr)`, fontWeight: 'bold' }}>
+										<div style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`), fontWeight: 'bold' }}>
 											{daysArr.map((dayData, idx) => (
 												<div key={idx} style={{ padding: '2px', height: '24px', border: '1px solid #ccc', backgroundColor: '#f0f0f0', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>
 													{getDayName(dayData.dayOfWeek)}
@@ -465,16 +495,16 @@ export function CustomerDetailPage() {
 											))}
 										</div>
 										{/* 日付行 */}
-										<div style={{ display: 'grid', gridTemplateColumns: `repeat(${daysArr.length}, 1fr)`, fontWeight: 'bold' }}>
+										<div ref={rowRef} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`), fontWeight: 'bold' }}>
 											{daysArr.map((dayData, idx) => (
-												<div key={idx} style={{ padding: (tight ? '0 2px 0 2px' : '0 2px 8px 2px'), height: '19px', border: '1px solid #ccc', textAlign: 'center', backgroundColor: dayData.dayOfWeek === 0 || dayData.dayOfWeek === 6 ? '#ffebee' : '#e3f2fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>
+												<div key={idx} className="day-cell" style={{ padding: (tight ? '0 2px 0 2px' : '0 2px 8px 2px'), height: '19px', border: '1px solid #ccc', textAlign: 'center', backgroundColor: (dayData.dayOfWeek === 0 ? '#ffebee' : (dayData.dayOfWeek === 6 ? '#e3f2fd' : 'white')), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>
 													{dayData.day}
 												</div>
 											))}
 										</div>
 										{/* 各商品の配達数量行 */}
 										{contracts.map((contract: any) => (
-											<div key={contract.id} style={{ display: 'grid', gridTemplateColumns: `repeat(${daysArr.length}, 1fr)` }}>
+											<div key={contract.id} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`) }}>
 												{daysArr.map((dayData: any, dayIndex: number) => {
 													const contractStartDate = new Date(contract.startDate);
 													contractStartDate.setHours(0, 0, 0, 0);
@@ -484,8 +514,10 @@ export function CustomerDetailPage() {
 													const quantity = (currentDayDate >= contractStartDate && pattern) ? pattern.quantity || 0 : 0;
 													const hasDelivery = quantity > 0;
 													return (
-														<div key={dayIndex} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: hasDelivery ? 'bold' as any : 'normal' }}>
-															{hasDelivery ? quantity : ''}
+														<div key={dayIndex} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'normal' }}>
+															{hasDelivery ? (
+																<span style={{ color: '#111', letterSpacing: '0.2px', fontFeatureSettings: '"tnum"', fontSize: '18px', lineHeight: 1 }}>{quantity}</span>
+															) : ''}
 														</div>
 													);
 												})}
@@ -497,11 +529,33 @@ export function CustomerDetailPage() {
 								return (
 									<>
 										<div>
-											{renderSection(firstHalf, false)}
+											{renderSection(firstHalf, false, dayRowRef, false)}
 										</div>
 										{secondHalf.length > 0 && (
-											<div style={{ marginTop: 16 }}>
+											<div style={{ marginTop: 16, position: 'relative', transform: 'translateX(-225px)', width: '100%', paddingRight: '225px' }}>
 												{renderSection(secondHalf, false)}
+												{/* 右サイド: 単価と月本数（16日以降表示横） */}
+												<div
+													onMouseDown={(e)=>{ sidebarDragRef.current.isDragging = true; sidebarDragRef.current.startX = e.clientX - sidebarDragOffset.dx; sidebarDragRef.current.startY = e.clientY - sidebarDragOffset.dy; }}
+													style={{ position: 'absolute', top: 0, right: -20, width: '180px', backgroundColor: 'white', border: '1px solid #ddd', borderRadius: 4, padding: '16px 12px 16px 12px', textAlign: 'left', cursor: 'move', transform: `translate(${sidebarDragOffset.dx}px, ${sidebarDragOffset.dy}px)` }}
+												>
+													<div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: 8 }}>単価 / 月本数</div>
+													<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+														{contracts.map((contract: any) => {
+															const monthlyQuantity = calendarData.reduce((sum, day) => {
+																const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
+																return sum + (pattern?.quantity || 0);
+															}, 0);
+															const unitPrice = contract.unitPrice || contract.product?.price || 0;
+															return (
+																<div key={`second-half-sidebar-${contract.id}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, fontSize: '12px', padding: '4px 0', borderBottom: '1px dashed #eee' }}>
+																	<span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%' }}>{contract.product?.name ?? `#${contract.productId}`}</span>
+																	<span style={{ color: '#111' }}>{formatCurrency(unitPrice)} / {monthlyQuantity}{contract.product?.unit}</span>
+																</div>
+															);
+														})}
+													</div>
+												</div>
 											</div>
 										)}
 									</>
