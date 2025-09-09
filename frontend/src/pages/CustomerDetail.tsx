@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { downloadBlob, postPdf } from '../lib/api';
-import { getDataTyped, putDataTyped } from '../lib/typedApi';
+import { getDataTyped, putDataTyped, postDataTyped, deleteVoid } from '../lib/typedApi';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { FormTextField } from '../components/FormTextField';
@@ -31,6 +31,38 @@ export function CustomerDetailPage() {
 	const [selectedCourse, setSelectedCourse] = React.useState<number | null>(null);
 	const [courseLoading, setCourseLoading] = React.useState(false);
 	const [coursePosition, setCoursePosition] = React.useState<number | null>(null);
+	const dayRowRef = React.useRef<HTMLDivElement | null>(null);
+	const [dayCellWidth, setDayCellWidth] = React.useState<number | null>(null);
+	const sidebarDragRef = React.useRef<{ isDragging: boolean; startX: number; startY: number }>({ isDragging: false, startX: 0, startY: 0 });
+	const [sidebarDragOffset, setSidebarDragOffset] = React.useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
+	// 契約操作モーダル用の状態
+	const [contractOpsOpen, setContractOpsOpen] = React.useState(false);
+	const [selectedContractId, setSelectedContractId] = React.useState<number | null>(null);
+	const [contractOpsTab, setContractOpsTab] = React.useState<'add'|'pattern'|'pause'|'cancel'>('pattern');
+	const [allProducts, setAllProducts] = React.useState<any[]>([]);
+	const [addForm, setAddForm] = React.useState<{ productId?: number; startDate?: string; unitPrice?: number; days: Record<number, number> }>({ days: {0:0,1:0,2:0,3:0,4:0,5:0,6:0} });
+	const [patternForm, setPatternForm] = React.useState<Record<number, number>>({0:0,1:0,2:0,3:0,4:0,5:0,6:0});
+	const selectedContract = React.useMemo(()=> contracts.find((c:any)=>c.id===selectedContractId), [contracts, selectedContractId]);
+	const [pauseForm, setPauseForm] = React.useState<{ startDate?: string; endDate?: string }>({ startDate: undefined, endDate: undefined });
+	React.useEffect(() => {
+		const onMove = (e: MouseEvent) => {
+			if (!sidebarDragRef.current.isDragging) return;
+			setSidebarDragOffset({
+				dx: e.clientX - sidebarDragRef.current.startX,
+				dy: e.clientY - sidebarDragRef.current.startY,
+			});
+		};
+		const onUp = () => {
+			if (sidebarDragRef.current.isDragging) sidebarDragRef.current.isDragging = false;
+		};
+		window.addEventListener('mousemove', onMove as any);
+		window.addEventListener('mouseup', onUp);
+		return () => {
+			window.removeEventListener('mousemove', onMove as any);
+			window.removeEventListener('mouseup', onUp);
+		};
+	}, []);
 
 	// bank modal state and handlers
 	const bankSchema = z.object({
@@ -145,6 +177,16 @@ export function CustomerDetailPage() {
 		}
 	}, [currentDate, contracts]);
 
+	// 前半（日付行）の1セル幅を測定し、後半にも適用
+	React.useEffect(() => {
+		if (dayRowRef.current) {
+			const firstCell = dayRowRef.current.querySelector('.day-cell') as HTMLElement | null;
+			if (firstCell) {
+				setDayCellWidth(firstCell.getBoundingClientRect().width);
+			}
+		}
+	}, [calendarData, currentDate, contracts]);
+
 	// カレンダーデータ生成
 	const generateCalendarData = (contractsData: any[]) => {
 		const year = currentDate.getFullYear();
@@ -205,6 +247,12 @@ export function CustomerDetailPage() {
 
 	const formatCurrency = (n: number) => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(n);
 	const getDayName = (dayOfWeek: number) => ['日', '月', '火', '水', '木', '金', '土'][dayOfWeek];
+	const toLocalYmd = (date: Date) => {
+		const y = date.getFullYear();
+		const m = String(date.getMonth() + 1).padStart(2, '0');
+		const d = String(date.getDate()).padStart(2, '0');
+		return `${y}-${m}-${d}`;
+	};
 
 	// コース変更モーダルを開く
 	const openCourseModal = () => {
@@ -277,6 +325,106 @@ export function CustomerDetailPage() {
 		} finally {
 			setInvoiceLoading(false);
 		}
+	};
+
+	const openContractOps = async (contractId: number | null, clickedDate?: Date) => {
+		setSelectedContractId(contractId);
+		setContractOpsOpen(true);
+		// 初期タブはパターン変更
+		setContractOpsTab(contractId ? 'pattern' : 'add');
+		// 製品リストのプリフェッチ
+		try { const prods = await getDataTyped<any[]>('/api/products'); setAllProducts(Array.isArray(prods)?prods:(prods as any)?.data??[]); } catch {}
+		// パターン初期値
+		if (contractId) {
+			const c = contracts.find(c=>c.id===contractId);
+			const init: Record<number, number> = {0:0,1:0,2:0,3:0,4:0,5:0,6:0};
+			c?.patterns?.forEach((p:any)=>{ init[p.dayOfWeek] = p.quantity||0; });
+			setPatternForm(init);
+		}
+		// 追加フォーム初期値
+		setAddForm({ days:{0:0,1:0,2:0,3:0,4:0,5:0,6:0}, startDate: toLocalYmd(new Date()), unitPrice: 0 });
+		const base = clickedDate ?? new Date();
+		const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+		const iso = toLocalYmd(d);
+		setPauseForm({ startDate: iso, endDate: iso });
+	};
+
+	const closeContractOps = () => { setContractOpsOpen(false); setSelectedContractId(null); };
+
+	const reloadContracts = async () => {
+		try {
+			const contractsData = await getDataTyped<any>(`/api/customers/${customerId}/contracts`);
+			const contractsArray = Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []);
+			setContracts(contractsArray);
+			generateCalendarData(contractsArray);
+		} catch {}
+	};
+
+	const submitAddProduct = async () => {
+		try {
+			if (!addForm.productId || !addForm.startDate) return;
+			const body:any = {
+				productId: addForm.productId,
+				startDate: addForm.startDate,
+				unitPrice: addForm.unitPrice ?? 0,
+				patternType: '1',
+				sunday: addForm.days[0]||0,
+				monday: addForm.days[1]||0,
+				tuesday: addForm.days[2]||0,
+				wednesday: addForm.days[3]||0,
+				thursday: addForm.days[4]||0,
+				friday: addForm.days[5]||0,
+				saturday: addForm.days[6]||0,
+				isActive: true,
+			};
+			await postDataTyped<typeof body, any>(`/api/customers/${customerId}/contracts`, body);
+			await reloadContracts();
+			setContractOpsOpen(false);
+			toast.notify('success','商品を追加しました');
+		} catch { toast.notify('error','商品追加に失敗しました'); }
+	};
+
+	const submitUpdatePatterns = async () => {
+		if (!selectedContractId) return;
+		try {
+			const c = contracts.find(c=>c.id===selectedContractId);
+			const current: Record<number, any> = {};
+			c?.patterns?.forEach((p:any)=>{ current[p.dayOfWeek]=p; });
+			for (let d=0; d<7; d++) {
+				const qty = Number(patternForm[d]||0);
+				const exist = current[d];
+				if (qty>0 && exist) {
+					await putDataTyped(`/api/customers/${customerId}/delivery-patterns/${exist.id}`, { quantity: qty });
+				} else if (qty>0 && !exist) {
+					await postDataTyped(`/api/customers/${customerId}/delivery-patterns`, { contractId: selectedContractId, dayOfWeek: d, quantity: qty });
+				} else if (qty===0 && exist) {
+					await deleteVoid(`/api/customers/${customerId}/delivery-patterns/${exist.id}`);
+				}
+			}
+			await reloadContracts();
+			setContractOpsOpen(false);
+			toast.notify('success','配達パターンを更新しました');
+		} catch { toast.notify('error','パターン更新に失敗しました'); }
+	};
+
+	const submitPause = async () => {
+		if (!selectedContractId) return;
+		try {
+			if (pauseForm.startDate && pauseForm.endDate) {
+				await postDataTyped(`/api/customers/${customerId}/contracts/${selectedContractId}/pauses`, {
+					startDate: pauseForm.startDate,
+					endDate: pauseForm.endDate
+				});
+			}
+			await reloadContracts();
+			setContractOpsOpen(false);
+			const msg = pauseForm?.startDate && pauseForm?.endDate ? `休配にしました（${pauseForm.startDate} ～ ${pauseForm.endDate}）` : '休配にしました';
+			toast.notify('success', msg);
+		} catch { toast.notify('error','休配に失敗しました'); }
+	};
+	const submitCancel = async () => {
+		if (!selectedContractId) return;
+		try { await deleteVoid(`/api/customers/${customerId}/contracts/${selectedContractId}`); await reloadContracts(); setContractOpsOpen(false); toast.notify('success','解約しました'); } catch { toast.notify('error','解約に失敗しました'); }
 	};
 
 	return (
@@ -407,11 +555,11 @@ export function CustomerDetailPage() {
 				</div>
 
 				{/* カレンダー部分 */}
-				<div style={{ backgroundColor: 'white', border: '1px solid #ccc' }}>
+				<div style={{ backgroundColor: 'white', border: '1px solid #ccc', fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif' }}>
 					{/* 商品名を左側に表示 */}
 					<div style={{ display: 'flex' }}>
 						{/* 商品名列 */}
-						<div style={{ minWidth: '150px', borderRight: '1px solid #ccc' }}>
+						<div style={{ minWidth: '225px', borderRight: '1px solid #ccc' }}>
 							<div style={{ 
 								padding: '2px', 
 								border: '1px solid #ccc', 
@@ -435,14 +583,12 @@ export function CustomerDetailPage() {
 									boxSizing: 'border-box',
 									display: 'flex',
 									flexDirection: 'column',
-									justifyContent: 'center'
+									justifyContent: 'center', cursor: 'pointer'
 								}}>
-									<div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: '14px', height: '14px', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 4px' }}>
-										{index + 1}. {contract.product?.name || `商品ID: ${contract.productId}`}
+									<div onClick={()=>openContractOps(contract.id)} style={{ fontWeight: 'bold', fontSize: '14px', lineHeight: '14px', height: '14px', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 4px' }}>
+										{contract.product?.name || `商品ID: ${contract.productId}`}
 									</div>
-									<div style={{ color: '#666', fontSize: '10px', lineHeight: '14px', height: '14px', margin: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 4px' }}>
-										単価: {formatCurrency(contract.unitPrice || contract.product?.price || 0)}
-									</div>
+									{/* 単価表示は非表示 */}
 								</div>
 							))}
 							</div>
@@ -454,10 +600,10 @@ export function CustomerDetailPage() {
 								const firstHalf = calendarData.filter(d => d.day <= 15);
 								const secondHalf = calendarData.filter(d => d.day > 15);
 
-								const renderSection = (daysArr: any[], tight?: boolean) => (
+								const renderSection = (daysArr: any[], tight?: boolean, rowRef?: any, isSecondHalf?: boolean) => (
 									<>
 										{/* カレンダーヘッダー（曜日） */}
-										<div style={{ display: 'grid', gridTemplateColumns: `repeat(${daysArr.length}, 1fr)`, fontWeight: 'bold' }}>
+										<div style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`), fontWeight: 'bold' }}>
 											{daysArr.map((dayData, idx) => (
 												<div key={idx} style={{ padding: '2px', height: '24px', border: '1px solid #ccc', backgroundColor: '#f0f0f0', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>
 													{getDayName(dayData.dayOfWeek)}
@@ -465,16 +611,16 @@ export function CustomerDetailPage() {
 											))}
 										</div>
 										{/* 日付行 */}
-										<div style={{ display: 'grid', gridTemplateColumns: `repeat(${daysArr.length}, 1fr)`, fontWeight: 'bold' }}>
+										<div ref={rowRef} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`), fontWeight: 'bold' }}>
 											{daysArr.map((dayData, idx) => (
-												<div key={idx} style={{ padding: (tight ? '0 2px 0 2px' : '0 2px 8px 2px'), height: '19px', border: '1px solid #ccc', textAlign: 'center', backgroundColor: dayData.dayOfWeek === 0 || dayData.dayOfWeek === 6 ? '#ffebee' : '#e3f2fd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>
+												<div key={idx} className="day-cell" style={{ padding: (tight ? '0 2px 0 2px' : '0 2px 8px 2px'), height: '19px', border: '1px solid #ccc', textAlign: 'center', backgroundColor: (dayData.dayOfWeek === 0 ? '#ffebee' : (dayData.dayOfWeek === 6 ? '#e3f2fd' : 'white')), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px' }}>
 													{dayData.day}
 												</div>
 											))}
 										</div>
 										{/* 各商品の配達数量行 */}
 										{contracts.map((contract: any) => (
-											<div key={contract.id} style={{ display: 'grid', gridTemplateColumns: `repeat(${daysArr.length}, 1fr)` }}>
+											<div key={contract.id} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`) }}>
 												{daysArr.map((dayData: any, dayIndex: number) => {
 													const contractStartDate = new Date(contract.startDate);
 													contractStartDate.setHours(0, 0, 0, 0);
@@ -484,8 +630,18 @@ export function CustomerDetailPage() {
 													const quantity = (currentDayDate >= contractStartDate && pattern) ? pattern.quantity || 0 : 0;
 													const hasDelivery = quantity > 0;
 													return (
-														<div key={dayIndex} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: hasDelivery ? 'bold' as any : 'normal' }}>
-															{hasDelivery ? quantity : ''}
+														<div key={dayIndex} onClick={()=>openContractOps(contract.id, currentDayDate)} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'normal', cursor: 'pointer' }}>
+															{(() => {
+																// 休配判定：選択契約のpausesに現在日が含まれるか（契約データに含まれている想定）
+																const paused = (contract.pauses ?? []).some((p:any)=>{
+																	const ps = new Date(p.startDate); ps.setHours(0,0,0,0);
+																	const pe = new Date(p.endDate); pe.setHours(23,59,59,999);
+																	return ps <= currentDayDate && currentDayDate <= pe;
+																});
+																// 配達本数がある日に限り「休」を表示
+																if (hasDelivery && paused) return <span style={{ color: '#d32f2f', fontSize: 14, fontWeight: 'bold' }}>休</span>;
+																return hasDelivery ? <span style={{ color: '#111', letterSpacing: '0.2px', fontFeatureSettings: '"tnum"', fontSize: '18px', lineHeight: 1 }}>{quantity}</span> : '';
+															})()}
 														</div>
 													);
 												})}
@@ -497,11 +653,33 @@ export function CustomerDetailPage() {
 								return (
 									<>
 										<div>
-											{renderSection(firstHalf, false)}
+											{renderSection(firstHalf, false, dayRowRef, false)}
 										</div>
 										{secondHalf.length > 0 && (
-											<div style={{ marginTop: 16 }}>
+											<div style={{ marginTop: 16, position: 'relative', transform: 'translateX(-225px)', width: '100%', paddingRight: '225px' }}>
 												{renderSection(secondHalf, false)}
+												{/* 右サイド: 単価と月本数（16日以降表示横） */}
+												<div
+													onMouseDown={(e)=>{ sidebarDragRef.current.isDragging = true; sidebarDragRef.current.startX = e.clientX - sidebarDragOffset.dx; sidebarDragRef.current.startY = e.clientY - sidebarDragOffset.dy; }}
+													style={{ position: 'absolute', top: 0, right: -20, width: '180px', backgroundColor: 'white', border: '1px solid #ddd', borderRadius: 4, padding: '16px 12px 16px 12px', textAlign: 'left', cursor: 'move', transform: `translate(${sidebarDragOffset.dx}px, ${sidebarDragOffset.dy}px)` }}
+												>
+													<div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: 8 }}>単価 / 月本数</div>
+													<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+														{contracts.map((contract: any) => {
+															const monthlyQuantity = calendarData.reduce((sum, day) => {
+																const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
+																return sum + (pattern?.quantity || 0);
+															}, 0);
+															const unitPrice = contract.unitPrice || contract.product?.price || 0;
+															return (
+																<div key={`second-half-sidebar-${contract.id}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, fontSize: '12px', padding: '4px 0', borderBottom: '1px dashed #eee' }}>
+																	<span style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%' }}>{contract.product?.name ?? `#${contract.productId}`}</span>
+																	<span style={{ color: '#111' }}>{formatCurrency(unitPrice)} / {monthlyQuantity}{contract.product?.unit}</span>
+																</div>
+															);
+														})}
+													</div>
+												</div>
 											</div>
 										)}
 									</>
@@ -793,6 +971,95 @@ export function CustomerDetailPage() {
 					</div>
 				</form>
 			</Modal>
+
+			{/* 契約操作モーダル */}
+			{contractOpsOpen && (
+				<Modal open={contractOpsOpen} title="契約の操作" onClose={closeContractOps}>
+					{selectedContract && (
+						<div style={{ marginBottom: 8, color: '#333', fontWeight: 'bold' }}>
+							対象商品: {selectedContract?.product?.name ?? `#${selectedContract?.productId}`}
+						</div>
+					)}
+					<div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+						<button className={contractOpsTab==='add'?'' as any:'ghost'} onClick={()=>setContractOpsTab('add')}>商品追加</button>
+						<button className={contractOpsTab==='pattern'?'' as any:'ghost'} onClick={()=>setContractOpsTab('pattern')} disabled={!selectedContractId}>お届けパターン変更</button>
+						<button className={contractOpsTab==='pause'?'' as any:'ghost'} onClick={()=>setContractOpsTab('pause')} disabled={!selectedContractId}>休配</button>
+						<button className={contractOpsTab==='cancel'?'' as any:'ghost'} onClick={()=>setContractOpsTab('cancel')} disabled={!selectedContractId}>解約</button>
+					</div>
+					{contractOpsTab==='add' && (
+						<div style={{ display: 'grid', gap: 8 }}>
+							<label>商品
+								<select value={addForm.productId??''} onChange={(e)=>setAddForm(prev=>({...prev, productId: Number(e.target.value)||undefined}))}>
+									<option value="">選択してください</option>
+									{allProducts.map((p:any)=>(<option key={p.id} value={p.id}>{p.name}</option>))}
+								</select>
+							</label>
+							<label>開始日
+								<input type="date" value={addForm.startDate??''} onChange={(e)=>setAddForm(prev=>({...prev, startDate: e.target.value}))} />
+							</label>
+							<label>単価
+								<input type="number" value={addForm.unitPrice??0} onChange={(e)=>setAddForm(prev=>({...prev, unitPrice: Number(e.target.value)||0}))} />
+							</label>
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+								{['日','月','火','水','木','金','土'].map((d,idx)=> (
+									<label key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems:'center', fontSize: 12 }}>
+										<span>{d}</span>
+										<input type="number" min={0} value={addForm.days[idx]??0} onChange={(e)=>setAddForm(prev=>({ ...prev, days: { ...prev.days, [idx]: Number(e.target.value)||0 } }))} style={{ width: 56 }} />
+									</label>
+								))}
+							</div>
+							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+								<button className="ghost" onClick={closeContractOps}>閉じる</button>
+								<button onClick={submitAddProduct}>追加</button>
+							</div>
+						</div>
+					)}
+					{contractOpsTab==='pattern' && selectedContractId && (
+						<div style={{ display: 'grid', gap: 8 }}>
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+								{['日','月','火','水','木','金','土'].map((d,idx)=> (
+									<label key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems:'center', fontSize: 12 }}>
+										<span>{d}</span>
+										<input type="number" min={0} value={patternForm[idx]??0} onChange={(e)=>setPatternForm(prev=>({ ...prev, [idx]: Number(e.target.value)||0 }))} style={{ width: 56 }} />
+									</label>
+								))}
+							</div>
+							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+								<button className="ghost" onClick={closeContractOps}>閉じる</button>
+								<button onClick={submitUpdatePatterns}>保存</button>
+							</div>
+						</div>
+					)}
+					{contractOpsTab==='pause' && selectedContractId && (
+						<div style={{ display: 'grid', gap: 8 }}>
+							<div>この契約を休配にします。開始日と終了日を指定できます。</div>
+							<div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+								<label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+									開始日
+									<input type="date" value={pauseForm.startDate ?? ''} onChange={(e)=> setPauseForm(prev=>({ ...prev, startDate: e.target.value }))} style={{ width: 130 }} />
+								</label>
+								<label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+									終了日
+									<input type="date" value={pauseForm.endDate ?? ''} onChange={(e)=> setPauseForm(prev=>({ ...prev, endDate: e.target.value }))} style={{ width: 130 }} />
+								</label>
+							</div>
+							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+								<button className="ghost" onClick={closeContractOps}>キャンセル</button>
+								<button onClick={submitPause}>休配にする</button>
+							</div>
+						</div>
+					)}
+					{contractOpsTab==='cancel' && selectedContractId && (
+						<div style={{ display: 'grid', gap: 8 }}>
+							<div>この契約を解約します。元に戻せません。よろしいですか？</div>
+							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+								<button className="ghost" onClick={closeContractOps}>キャンセル</button>
+								<button onClick={submitCancel} style={{ backgroundColor: '#d32f2f', color: 'white' }}>解約する</button>
+							</div>
+						</div>
+					)}
+				</Modal>
+			)}
 		</div>
 	);
 }

@@ -38,9 +38,10 @@ const customersService_1 = require("../services/customersService");
 const router = (0, express_1.Router)();
 router.get('/', async (req, res, next) => {
     try {
-        const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir } = req.query;
+        const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir, all } = req.query;
         const p = Number(page) || 1;
         const ps = Math.min(Number(pageSize) || 10, 100);
+        const returnAll = String(all).toLowerCase() === '1' || String(all).toLowerCase() === 'true';
         let where = {};
         const conditions = [];
         // ID検索
@@ -68,10 +69,12 @@ router.get('/', async (req, res, next) => {
         }
         const orderBy = sortKey ? { [String(sortKey)]: (String(sortDir) === 'desc' ? 'desc' : 'asc') } : { id: 'asc' };
         const prisma = (await Promise.resolve().then(() => __importStar(require('../lib/prisma')))).default;
-        const [total, items] = await Promise.all([
-            prisma.customer.count({ where }),
-            prisma.customer.findMany({ where, orderBy, skip: (p - 1) * ps, take: ps }),
-        ]);
+        const total = await prisma.customer.count({ where });
+        const items = await prisma.customer.findMany({
+            where,
+            orderBy,
+            ...(returnAll ? {} : { skip: (p - 1) * ps, take: ps }),
+        });
         res.setHeader('X-Total-Count', String(total));
         res.json({ success: true, data: items });
     }

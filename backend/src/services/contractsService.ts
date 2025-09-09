@@ -29,6 +29,11 @@ export const patternCreateSchema = z.object({
 });
 export const patternUpdateSchema = patternCreateSchema.partial();
 
+export const pauseCreateSchema = z.object({
+  startDate: z.string().min(1),
+  endDate: z.string().min(1),
+});
+
 export const contractsService = {
   async listByCustomer(customerId: number) {
     return contractsRepository.listByCustomer(customerId);
@@ -36,7 +41,9 @@ export const contractsService = {
   async createContract(customerId: number, input: unknown) {
     const data = contractCreateSchema.parse(input);
     const contract = await contractsRepository.createContract({ ...data, customerId });
-    await autoAssignCourseForCustomerByPatterns(customerId);
+    if (process.env.AUTO_ASSIGN_COURSE_BY_PATTERNS !== 'false') {
+      await autoAssignCourseForCustomerByPatterns(customerId);
+    }
     return contract;
   },
   async updateContract(id: number, input: unknown) {
@@ -56,7 +63,9 @@ export const contractsService = {
     // パターン変更に応じてコース自動割当を更新
     const contract = await prisma.customerProductContract.findUnique({ where: { id: data.contractId }, select: { customerId: true } });
     if (contract?.customerId) {
-      await autoAssignCourseForCustomerByPatterns(contract.customerId);
+      if (process.env.AUTO_ASSIGN_COURSE_BY_PATTERNS !== 'false') {
+        await autoAssignCourseForCustomerByPatterns(contract.customerId);
+      }
     }
     return created;
   },
@@ -68,13 +77,21 @@ export const contractsService = {
     if (pattern?.contractId) {
       const contract = await prisma.customerProductContract.findUnique({ where: { id: pattern.contractId }, select: { customerId: true } });
       if (contract?.customerId) {
-        await autoAssignCourseForCustomerByPatterns(contract.customerId);
+        if (process.env.AUTO_ASSIGN_COURSE_BY_PATTERNS !== 'false') {
+          await autoAssignCourseForCustomerByPatterns(contract.customerId);
+        }
       }
     }
     return updated;
   },
   async removePattern(id: number) {
     await contractsRepository.removePattern(id);
+  },
+
+  async createPause(contractId: number, input: unknown) {
+    const data = pauseCreateSchema.parse(input);
+    if (new Date(data.endDate) < new Date(data.startDate)) throw new Error('INVALID_RANGE');
+    return contractsRepository.createPause(contractId, data.startDate, data.endDate);
   },
 };
 

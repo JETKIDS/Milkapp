@@ -31,7 +31,7 @@ export interface UpdatePatternInput extends Partial<CreatePatternInput> {}
 export const contractsRepository = {
   // contracts
   async listByCustomer(customerId: number) {
-    return prisma.customerProductContract.findMany({ where: { customerId }, include: { product: true, patterns: true } });
+    return prisma.customerProductContract.findMany({ where: { customerId }, include: { product: true, patterns: true, pauses: true } });
   },
   async createContract(input: CreateContractInput & { customerId: number }) {
     // 契約を作成
@@ -104,6 +104,11 @@ export const contractsRepository = {
   async removePattern(id: number) {
     return prisma.deliveryPattern.delete({ where: { id } });
   },
+
+	// pauses
+	async createPause(contractId: number, startDateISO: string, endDateISO: string) {
+		return prisma.contractPause.create({ data: { contractId, startDate: new Date(startDateISO), endDate: new Date(endDateISO) } });
+	},
 };
 
 

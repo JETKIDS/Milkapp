@@ -6,3 +6,4 @@ frontend/dist/
 **/dev.db-journal
 .env
 frontend/.env
+\n# Local env & DB\nbackend/.env\nbackend/prisma/dev.db\n# Logs\nbackend-*.log\nvite-*.log\n# Build outputs\nbackend/dist\n# Screenshots\nスクリーンショット/**\n

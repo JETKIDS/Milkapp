@@ -1,13 +1,17 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const reportsService_1 = require("../services/reportsService");
 const pdfUtil_1 = require("../pdf/pdfUtil");
-const prisma_1 = __importDefault(require("../lib/prisma"));
 const router = (0, express_1.Router)();
+// 日付表示をUTC基準で安定させるユーティリティ（タイムゾーン差分による+1日ズレ対策）
+function formatDateYMDUTC(input) {
+    const d = typeof input === 'string' ? new Date(input) : input;
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const day = d.getUTCDate();
+    return `${y}年${m}月${day}日`;
+}
 router.post('/delivery-list', async (req, res, next) => {
     try {
         const items = await reportsService_1.reportsService.deliveryList(req.body);
@@ -40,12 +44,11 @@ router.post('/delivery-schedule', async (req, res, next) => {
                     deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                     deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                     delivery.productName,
-                    String(delivery.quantity)
+                    String(delivery.paused ? '休' : delivery.quantity)
                 ]);
             });
         });
-        const date = new Date(targetDate);
-        const title = `配達スケジュール - ${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+        const title = `配達スケジュール - ${formatDateYMDUTC(targetDate)}`;
         const pdf = await (0, pdfUtil_1.generateTablePdf)(title, headers, rows);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', pdf.length);
@@ -66,9 +69,7 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
                 return res.status(400).json({ error: 'courseIds, startDate, and endDate are required' });
             }
             const items = await reportsService_1.reportsService.getDeliveryScheduleForMultipleCourses(courseIds, startDate, endDate);
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const dateRange = `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+            const dateRange = `${formatDateYMDUTC(startDate)}〜${formatDateYMDUTC(endDate)}`;
             const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
             // 各コースごとにデータを整理
             const courseSchedules = [];
@@ -94,7 +95,7 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
                                     deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                                     deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                                     delivery.productName,
-                                    String(delivery.quantity)
+                                    String(delivery.paused ? '休' : delivery.quantity)
                                 ]);
                             });
                         });
@@ -137,14 +138,12 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
                             deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                             deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                             delivery.productName,
-                            String(delivery.quantity)
+                            String(delivery.paused ? '休' : delivery.quantity)
                         ]);
                     });
                 });
             });
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const title = `配達スケジュール - ${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+            const title = `配達スケジュール - ${formatDateYMDUTC(startDate)}〜${formatDateYMDUTC(endDate)}`;
             const pdf = await (0, pdfUtil_1.generateTablePdf)(title, headers, rows);
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Length', pdf.length);
@@ -181,9 +180,7 @@ router.post('/product-list', async (req, res, next) => {
                     });
                 }
             });
-            const start = new Date(req.body.startDate);
-            const end = new Date(req.body.endDate);
-            const dateRange = `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+            const dateRange = `${formatDateYMDUTC(req.body.startDate)}〜${formatDateYMDUTC(req.body.endDate)}`;
             courseMap.forEach((courseData, courseId) => {
                 const headers = ['商品名', 'メーカー', '必要数量'];
                 const rows = courseData.products.map(p => [
@@ -207,9 +204,7 @@ router.post('/product-list', async (req, res, next) => {
         }
         else {
             // 合算出力の場合
-            const start = new Date(req.body.startDate || new Date());
-            const end = new Date(req.body.endDate || new Date());
-            const title = `商品リスト - ${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+            const title = `商品リスト - ${formatDateYMDUTC(req.body.startDate || new Date())}〜${formatDateYMDUTC(req.body.endDate || new Date())}`;
             const headers = ['商品名', 'メーカー', '必要数量'];
             const rows = items.map((item) => [
                 item.productName,
@@ -229,52 +224,13 @@ router.post('/product-list', async (req, res, next) => {
 router.post('/invoice/:customerId', async (req, res, next) => {
     try {
         const customerId = Number(req.params.customerId);
-        const inv = await reportsService_1.reportsService.createInvoice({ ...req.body, customerId });
-        // 顧客情報を取得
-        const customer = await prisma_1.default.customer.findUnique({
-            where: { id: customerId },
-            select: { name: true }
-        });
-        const formatJst = (d) => {
-            const dt = new Date(d);
-            const y = dt.getFullYear();
-            const m = String(dt.getMonth() + 1).padStart(2, '0');
-            const day = String(dt.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
-        };
-        const yen = (n) => `${Number(n ?? 0).toLocaleString('ja-JP')}円`;
-        // 詳細な請求書PDFを作成
-        if (inv.details && inv.details.length > 0) {
-            const title = `請求書 - ${customer?.name || '顧客'}様`;
-            const headers = ['商品名', '単価', '数量', '金額'];
-            const rows = inv.details.map((detail) => [
-                detail.productName,
-                yen(detail.unitPrice),
-                String(detail.quantity),
-                yen(detail.amount)
-            ]);
-            // 合計行を追加
-            rows.push(['', '', '合計', yen(inv.totalAmount)]);
-            const pdf = await (0, pdfUtil_1.generateTablePdf)(title, headers, rows);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Length', pdf.length);
-            res.status(200).send(pdf);
-        }
-        else {
-            // 詳細がない場合はシンプルな請求書
-            const lines = [
-                `お客様: ${customer?.name || '顧客'}`,
-                `請求期間: ${formatJst(inv.invoicePeriodStart)} ～ ${formatJst(inv.invoicePeriodEnd)}`,
-                `合計金額: ${yen(inv.totalAmount)}`,
-                `発行日: ${formatJst(inv.issuedDate)}`,
-                '',
-                '※契約データが見つかりませんでした',
-            ];
-            const pdf = await (0, pdfUtil_1.generateSimplePdf)('請求書', lines);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Length', pdf.length);
-            res.status(200).send(pdf);
-        }
+        // カスタムデザイン（A4横/上下2段×左右2列、3分割）
+        const { startDate, endDate } = req.body;
+        const section = await reportsService_1.reportsService.buildInvoicePdfPayload(customerId, startDate, endDate);
+        const pdf = await (0, pdfUtil_1.generateMultiInvoicePdf)([section]);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Length', pdf.length);
+        res.status(200).send(pdf);
     }
     catch (e) {
         next(e);

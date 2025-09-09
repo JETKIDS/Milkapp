@@ -152,12 +152,16 @@ export function generateTablePdf(title: string, headers: string[], rows: string[
       doc.strokeColor('#e2e8f0').rect(startX, y - 2, pageWidth, rowHeight + 10).stroke();
 
       x = startX;
+      // 休配行: 最終列が「休」なら薄い表示
+      const rowIsPaused = String(row[row.length - 1] ?? '').trim() === '休';
+      if (rowIsPaused) { doc.save(); doc.fillColor('#9ca3af'); try { (doc as any).opacity?.(0.7); } catch {} }
       for (let i = 0; i < headers.length; i++) {
         const cell = row[i] ?? '';
         const alignRight = isNumeric(cell) || headers[i].includes('価格');
         doc.text(String(cell), x + padding, y + 3, { width: colWidths[i] - padding * 2, align: alignRight ? 'right' : 'left' });
         x += colWidths[i];
       }
+      if (rowIsPaused) { try { (doc as any).opacity?.(1); } catch {} doc.fillColor('black'); doc.restore(); }
       y += rowHeight + 10;
     }
 
@@ -271,12 +275,15 @@ export function generateMultiCourseSchedulePdf(
         doc.strokeColor('#e2e8f0').rect(startX, y - 2, pageWidth, rowHeight + 10).stroke();
 
         x = startX;
+        const rowIsPaused = String(row[row.length - 1] ?? '').trim() === '休';
+        if (rowIsPaused) { doc.save(); doc.fillColor('#9ca3af'); try { (doc as any).opacity?.(0.7); } catch {} }
         for (let i = 0; i < headers.length; i++) {
           const cell = row[i] ?? '';
           const alignRight = isNumeric(cell) || headers[i].includes('価格') || headers[i].includes('数量');
           doc.fontSize(10).text(String(cell), x + padding, y + 3, { width: colWidths[i] - padding * 2, align: alignRight ? 'right' : 'left' });
           x += colWidths[i];
         }
+        if (rowIsPaused) { try { (doc as any).opacity?.(1); } catch {} doc.fillColor('black'); doc.restore(); }
         y += rowHeight + 10;
       }
 

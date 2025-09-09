@@ -5,6 +5,15 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
+// 日付表示をUTC基準で安定させるユーティリティ（タイムゾーン差分による+1日ズレ対策）
+function formatDateYMDUTC(input: string | Date): string {
+  const d = typeof input === 'string' ? new Date(input) : input;
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + 1;
+  const day = d.getUTCDate();
+  return `${y}年${m}月${day}日`;
+}
+
 router.post('/delivery-list', async (req, res, next) => {
   try {
     const items = await reportsService.deliveryList(req.body);
@@ -40,13 +49,12 @@ router.post('/delivery-schedule', async (req, res, next) => {
           deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
           deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
           delivery.productName,
-          String(delivery.quantity)
+          String(delivery.paused ? '休' : delivery.quantity)
         ]);
       });
     });
     
-    const date = new Date(targetDate);
-    const title = `配達スケジュール - ${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    const title = `配達スケジュール - ${formatDateYMDUTC(targetDate)}`;
     
     const pdf = await generateTablePdf(title, headers, rows);
     res.setHeader('Content-Type', 'application/pdf');
@@ -71,9 +79,7 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
       
       const items = await reportsService.getDeliveryScheduleForMultipleCourses(courseIds, startDate, endDate);
       
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const dateRange = `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+      const dateRange = `${formatDateYMDUTC(startDate)}〜${formatDateYMDUTC(endDate)}`;
       const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
       
       // 各コースごとにデータを整理
@@ -109,7 +115,7 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
                   deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                   deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                   delivery.productName,
-                  String(delivery.quantity)
+                  String(delivery.paused ? '休' : delivery.quantity)
                 ]);
               });
             });
@@ -158,15 +164,13 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
               deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
               deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
               delivery.productName,
-              String(delivery.quantity)
+              String(delivery.paused ? '休' : delivery.quantity)
             ]);
           });
         });
       });
       
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const title = `配達スケジュール - ${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+      const title = `配達スケジュール - ${formatDateYMDUTC(startDate)}〜${formatDateYMDUTC(endDate)}`;
       
       const pdf = await generateTablePdf(title, headers, rows);
       res.setHeader('Content-Type', 'application/pdf');
@@ -213,9 +217,7 @@ router.post('/product-list', async (req, res, next) => {
         }
       });
 
-      const start = new Date(req.body.startDate);
-      const end = new Date(req.body.endDate);
-      const dateRange = `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+      const dateRange = `${formatDateYMDUTC(req.body.startDate)}〜${formatDateYMDUTC(req.body.endDate)}`;
 
       courseMap.forEach((courseData, courseId) => {
         const headers = ['商品名', 'メーカー', '必要数量'];
@@ -241,9 +243,7 @@ router.post('/product-list', async (req, res, next) => {
       res.status(200).send(pdf);
     } else {
       // 合算出力の場合
-      const start = new Date(req.body.startDate || new Date());
-      const end = new Date(req.body.endDate || new Date());
-      const title = `商品リスト - ${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日〜${end.getMonth() + 1}月${end.getDate()}日`;
+      const title = `商品リスト - ${formatDateYMDUTC(req.body.startDate || new Date())}〜${formatDateYMDUTC(req.body.endDate || new Date())}`;
       
       const headers = ['商品名', 'メーカー', '必要数量'];
       const rows = items.map((item: any) => [

@@ -36,7 +36,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-require("dotenv/config");
+const path_1 = __importDefault(require("path"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env') });
 const express_1 = __importDefault(require("express"));
 const helmet_1 = __importDefault(require("helmet"));
 const cors_1 = __importDefault(require("cors"));
@@ -53,6 +55,8 @@ const reports_1 = __importDefault(require("./routes/reports"));
 const customerDetail_1 = __importDefault(require("./routes/customerDetail"));
 const dashboard_1 = __importDefault(require("./routes/dashboard"));
 const docs_1 = __importDefault(require("./routes/docs"));
+const contracts_2 = require("./routes/contracts");
+const stores_1 = __importDefault(require("./routes/stores"));
 const schema_1 = require("./openapi/schema");
 const app = (0, express_1.default)();
 app.use((0, helmet_1.default)());
@@ -76,6 +80,8 @@ app.use('/api/customers/:id/delivery-patterns', contracts_1.patternsRouter);
 app.use('/api/reports', reports_1.default);
 app.use('/api/customers/:id', customerDetail_1.default);
 app.use('/api/dashboard', dashboard_1.default);
+app.use('/api/stores', stores_1.default);
+app.use('/api/customers/:id/contracts', contracts_2.pausesRouter);
 app.use('/docs', docs_1.default);
 app.get('/docs.json', (_req, res) => {
     const doc = (0, schema_1.generateOpenApiDocument)();
