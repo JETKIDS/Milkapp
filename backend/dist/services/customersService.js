@@ -8,6 +8,11 @@ exports.createCustomerSchema = zod_1.z.object({
     name: zod_1.z.string().min(1),
     address: zod_1.z.string().min(1),
     phone: zod_1.z.string().optional().nullable(),
+    collectionMethod: zod_1.z.string().optional().nullable(),
+    bankBranchCode7: zod_1.z.string().regex(/^\d{7}$/).optional().nullable(),
+    accountNumber7: zod_1.z.string().regex(/^\d{7}$/).optional().nullable(),
+    accountHolderKana: zod_1.z.string().regex(/^[\u30A0-\u30FF\uFF65-\uFF9F\s]+$/).optional().nullable(),
+    customerCode7: zod_1.z.string().regex(/^\d{7}$/).optional().nullable(),
     email: zod_1.z.string().email().optional().nullable().or(zod_1.z.literal('')),
     deliveryCourseId: zod_1.z.number().int().positive().optional().nullable(),
 });

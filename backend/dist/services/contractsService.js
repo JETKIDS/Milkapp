@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.contractsService = exports.patternUpdateSchema = exports.patternCreateSchema = exports.contractUpdateSchema = exports.contractCreateSchema = void 0;
+exports.contractsService = exports.pauseCreateSchema = exports.patternUpdateSchema = exports.patternCreateSchema = exports.contractUpdateSchema = exports.contractCreateSchema = void 0;
 const zod_1 = require("zod");
 const contractsRepository_1 = require("../repositories/contractsRepository");
 const prisma_1 = __importDefault(require("../lib/prisma"));
@@ -32,6 +32,10 @@ exports.patternCreateSchema = zod_1.z.object({
     isActive: zod_1.z.boolean().optional(),
 });
 exports.patternUpdateSchema = exports.patternCreateSchema.partial();
+exports.pauseCreateSchema = zod_1.z.object({
+    startDate: zod_1.z.string().min(1),
+    endDate: zod_1.z.string().min(1),
+});
 exports.contractsService = {
     async listByCustomer(customerId) {
         return contractsRepository_1.contractsRepository.listByCustomer(customerId);
@@ -39,7 +43,9 @@ exports.contractsService = {
     async createContract(customerId, input) {
         const data = exports.contractCreateSchema.parse(input);
         const contract = await contractsRepository_1.contractsRepository.createContract({ ...data, customerId });
-        await autoAssignCourseForCustomerByPatterns(customerId);
+        if (process.env.AUTO_ASSIGN_COURSE_BY_PATTERNS !== 'false') {
+            await autoAssignCourseForCustomerByPatterns(customerId);
+        }
         return contract;
     },
     async updateContract(id, input) {
@@ -58,7 +64,9 @@ exports.contractsService = {
         // パターン変更に応じてコース自動割当を更新
         const contract = await prisma_1.default.customerProductContract.findUnique({ where: { id: data.contractId }, select: { customerId: true } });
         if (contract?.customerId) {
-            await autoAssignCourseForCustomerByPatterns(contract.customerId);
+            if (process.env.AUTO_ASSIGN_COURSE_BY_PATTERNS !== 'false') {
+                await autoAssignCourseForCustomerByPatterns(contract.customerId);
+            }
         }
         return created;
     },
@@ -70,13 +78,21 @@ exports.contractsService = {
         if (pattern?.contractId) {
             const contract = await prisma_1.default.customerProductContract.findUnique({ where: { id: pattern.contractId }, select: { customerId: true } });
             if (contract?.customerId) {
-                await autoAssignCourseForCustomerByPatterns(contract.customerId);
+                if (process.env.AUTO_ASSIGN_COURSE_BY_PATTERNS !== 'false') {
+                    await autoAssignCourseForCustomerByPatterns(contract.customerId);
+                }
             }
         }
         return updated;
     },
     async removePattern(id) {
         await contractsRepository_1.contractsRepository.removePattern(id);
+    },
+    async createPause(contractId, input) {
+        const data = exports.pauseCreateSchema.parse(input);
+        if (new Date(data.endDate) < new Date(data.startDate))
+            throw new Error('INVALID_RANGE');
+        return contractsRepository_1.contractsRepository.createPause(contractId, data.startDate, data.endDate);
     },
 };
 async function autoAssignCourseForCustomerByPatterns(customerId) {

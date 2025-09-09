@@ -8,7 +8,7 @@ const prisma_1 = __importDefault(require("../lib/prisma"));
 exports.contractsRepository = {
     // contracts
     async listByCustomer(customerId) {
-        return prisma_1.default.customerProductContract.findMany({ where: { customerId }, include: { product: true, patterns: true } });
+        return prisma_1.default.customerProductContract.findMany({ where: { customerId }, include: { product: true, patterns: true, pauses: true } });
     },
     async createContract(input) {
         // 契約を作成
@@ -76,5 +76,9 @@ exports.contractsRepository = {
     },
     async removePattern(id) {
         return prisma_1.default.deliveryPattern.delete({ where: { id } });
+    },
+    // pauses
+    async createPause(contractId, startDateISO, endDateISO) {
+        return prisma_1.default.contractPause.create({ data: { contractId, startDate: new Date(startDateISO), endDate: new Date(endDateISO) } });
     },
 };

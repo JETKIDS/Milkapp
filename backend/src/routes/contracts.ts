@@ -88,4 +88,14 @@ patternsRouter.delete('/:patternId', async (req, res, next) => {
 
 export default router;
 
+// 休配
+export const pausesRouter = Router({ mergeParams: true });
+pausesRouter.post('/:contractId/pauses', async (req, res, next) => {
+  try {
+    const id = Number(req.params.contractId);
+    const created = await contractsService.createPause(id, req.body);
+    res.status(201).json({ success: true, data: created });
+  } catch (e) { next(e); }
+});
+
 

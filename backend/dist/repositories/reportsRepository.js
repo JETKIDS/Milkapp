@@ -7,25 +7,51 @@ exports.reportsRepository = void 0;
 const prisma_1 = __importDefault(require("../lib/prisma"));
 exports.reportsRepository = {
     async getDeliveryList(filter) {
-        // 簡易取得: スケジュールと顧客・コースをベースに当該期間の予定を展開（モック）
-        // 実運用では契約パターンと期間展開ロジックが必要
-        let courseFilter = {};
-        // 複数コース選択がある場合はそれを優先
-        if (filter.courseIds && filter.courseIds.length > 0) {
-            courseFilter = { deliveryCourseId: { in: filter.courseIds } };
-        }
-        else if (filter.courseId) {
-            // 後方互換性: 単一コース選択
-            courseFilter = { deliveryCourseId: filter.courseId };
-        }
-        return prisma_1.default.customer.findMany({
+        // 対象日（startDate があればその日、なければ今日）において
+        // 契約・配達パターン・休配・契約終了日を考慮して、実際に配達が発生する顧客のみを返す
+        const targetDate = filter.startDate ? new Date(filter.startDate) : new Date();
+        const dayOfWeek = targetDate.getDay(); // 0=日曜
+        // コース条件
+        const courseFilter = (filter.courseIds && filter.courseIds.length > 0)
+            ? { deliveryCourseId: { in: filter.courseIds } }
+            : (filter.courseId ? { deliveryCourseId: filter.courseId } : {});
+        // 対象コースの顧客を取得（対象日の配達契約を内包）
+        const customers = await prisma_1.default.customer.findMany({
             where: courseFilter,
-            include: { deliveryCourse: true },
+            include: {
+                deliveryCourse: true,
+                contracts: {
+                    where: {
+                        isActive: true,
+                        startDate: { lte: targetDate },
+                        OR: [
+                            { endDate: null },
+                            { endDate: { gte: targetDate } },
+                        ],
+                        // 休配期間に含まれない契約のみ
+                        pauses: {
+                            none: {
+                                startDate: { lte: targetDate },
+                                endDate: { gte: targetDate },
+                            },
+                        },
+                        // 当該曜日の配達パターンがあること
+                        patterns: {
+                            some: { dayOfWeek: dayOfWeek, quantity: { gt: 0 }, isActive: true },
+                        },
+                    },
+                    include: {
+                        patterns: true,
+                    },
+                },
+            },
             orderBy: [
-                { deliveryCourseId: 'asc' }, // コース順
-                { id: 'asc' } // 同じコース内では顧客ID順
-            ]
+                { deliveryCourseId: 'asc' },
+                { id: 'asc' },
+            ],
         });
+        // 当日の有効契約を持つ顧客のみ返す
+        return customers.filter((c) => (c.contracts?.length ?? 0) > 0);
     },
     // 新機能: 特定日付のコース別配達詳細リスト（順番付き）
     async getDeliveryScheduleForDate(courseId, targetDate) {
@@ -40,16 +66,22 @@ exports.reportsRepository = {
                         contracts: {
                             where: {
                                 isActive: true,
-                                startDate: { lte: date } // 契約開始日以降のみ
+                                startDate: { lte: date }, // 契約開始日以降のみ
+                                OR: [
+                                    { endDate: null },
+                                    { endDate: { gte: date } },
+                                ],
                             },
                             include: {
                                 product: true,
                                 patterns: {
                                     where: {
                                         dayOfWeek: dayOfWeek,
-                                        quantity: { gt: 0 } // 数量が0より大きいもののみ
+                                        quantity: { gt: 0 }, // 数量が0より大きいもののみ
+                                        isActive: true,
                                     }
-                                }
+                                },
+                                pauses: true,
                             }
                         }
                     }
@@ -64,16 +96,22 @@ exports.reportsRepository = {
                 contracts: {
                     where: {
                         isActive: true,
-                        startDate: { lte: date }
+                        startDate: { lte: date },
+                        OR: [
+                            { endDate: null },
+                            { endDate: { gte: date } },
+                        ],
                     },
                     include: {
                         product: true,
                         patterns: {
                             where: {
                                 dayOfWeek: dayOfWeek,
-                                quantity: { gt: 0 }
+                                quantity: { gt: 0 },
+                                isActive: true,
                             }
-                        }
+                        },
+                        pauses: true,
                     }
                 }
             }
@@ -85,17 +123,27 @@ exports.reportsRepository = {
             ...customersWithPosition.map(cp => cp.customer),
             ...unpositionedCustomers
         ];
-        // 配達がある顧客のみフィルタリング
+        // 配達がある顧客、または休配の顧客のみフィルタリング（休配は数量欄に「休」を表示するため保持）
         const deliveryList = allCustomersOrdered
             .map(customer => {
             const deliveries = customer.contracts
                 .filter(contract => contract.patterns.length > 0)
-                .map(contract => ({
-                productName: contract.product.name,
-                quantity: contract.patterns[0].quantity,
-                unitPrice: contract.unitPrice
-            }));
-            return deliveries.length > 0 ? {
+                .map(contract => {
+                const qty = contract.patterns[0].quantity;
+                const paused = Array.isArray(contract.pauses) && contract.pauses.some((p) => {
+                    const s = new Date(p.startDate);
+                    const e = new Date(p.endDate);
+                    return s <= date && date <= e;
+                });
+                return {
+                    productName: contract.product.name,
+                    quantity: qty,
+                    unitPrice: contract.unitPrice,
+                    paused,
+                };
+            });
+            const hasAny = deliveries.length > 0;
+            return hasAny ? {
                 customerId: customer.id,
                 customerName: customer.name,
                 customerAddress: customer.address,
@@ -110,86 +158,10 @@ exports.reportsRepository = {
         const start = new Date(startDate);
         const end = new Date(endDate);
         const result = [];
-        // 開始日から終了日まで1日ずつ処理
-        for (let currentDate = new Date(start); currentDate <= end; currentDate.setDate(currentDate.getDate() + 1)) {
-            const dayOfWeek = currentDate.getDay(); // 0=日曜, 1=月曜, ...
-            // コース内の顧客を順番通りに取得
-            const customersWithPosition = await prisma_1.default.customerCoursePosition.findMany({
-                where: { deliveryCourseId: courseId },
-                include: {
-                    customer: {
-                        include: {
-                            contracts: {
-                                where: {
-                                    isActive: true,
-                                    startDate: { lte: currentDate } // 契約開始日以降のみ
-                                },
-                                include: {
-                                    product: true,
-                                    patterns: {
-                                        where: {
-                                            dayOfWeek: dayOfWeek,
-                                            quantity: { gt: 0 } // 数量が0より大きいもののみ
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                orderBy: { position: 'asc' }
-            });
-            // ポジションがない顧客も取得
-            const allCustomers = await prisma_1.default.customer.findMany({
-                where: { deliveryCourseId: courseId },
-                include: {
-                    contracts: {
-                        where: {
-                            isActive: true,
-                            startDate: { lte: currentDate }
-                        },
-                        include: {
-                            product: true,
-                            patterns: {
-                                where: {
-                                    dayOfWeek: dayOfWeek,
-                                    quantity: { gt: 0 }
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-            const positionedCustomerIds = customersWithPosition.map(cp => cp.customerId);
-            const unpositionedCustomers = allCustomers.filter(c => !positionedCustomerIds.includes(c.id));
-            // 結果をマージ（順番付き顧客 + 順番なし顧客）
-            const allCustomersOrdered = [
-                ...customersWithPosition.map(cp => cp.customer),
-                ...unpositionedCustomers
-            ];
-            // 配達がある顧客のみフィルタリング
-            const deliveryList = allCustomersOrdered
-                .map(customer => {
-                const deliveries = customer.contracts
-                    .filter(contract => contract.patterns.length > 0)
-                    .map(contract => ({
-                    productName: contract.product.name,
-                    quantity: contract.patterns[0].quantity,
-                    unitPrice: contract.unitPrice
-                }));
-                return deliveries.length > 0 ? {
-                    customerId: customer.id,
-                    customerName: customer.name,
-                    customerAddress: customer.address,
-                    deliveries
-                } : null;
-            })
-                .filter(item => item !== null);
-            if (deliveryList.length > 0) {
-                result.push({
-                    date: currentDate.toISOString(),
-                    deliveries: deliveryList
-                });
+        for (let currentDate = new Date(start); currentDate <= end; currentDate.setUTCDate(currentDate.getUTCDate() + 1)) {
+            const deliveries = await exports.reportsRepository.getDeliveryScheduleForDate(courseId, currentDate.toISOString());
+            if (deliveries.length > 0) {
+                result.push({ date: currentDate.toISOString(), deliveries });
             }
         }
         return result;
@@ -247,6 +219,10 @@ exports.reportsRepository = {
             where: {
                 isActive: true,
                 startDate: { lte: endDate },
+                OR: [
+                    { endDate: null },
+                    { endDate: { gte: startDate } },
+                ],
                 // コースフィルタ
                 ...(filter.courseIds && filter.courseIds.length > 0 ? {
                     customer: { deliveryCourseId: { in: filter.courseIds } }
@@ -265,7 +241,8 @@ exports.reportsRepository = {
                         deliveryCourse: true
                     }
                 },
-                patterns: true
+                patterns: { where: { isActive: true } },
+                pauses: true,
             }
         });
         // 商品ごとに数量を集計
@@ -275,6 +252,14 @@ exports.reportsRepository = {
         while (currentDate <= endDate) {
             const dayOfWeek = currentDate.getDay();
             contracts.forEach((contract) => {
+                // 休配期間に該当する場合はスキップ
+                const paused = Array.isArray(contract.pauses) && contract.pauses.some((p) => {
+                    const s = new Date(p.startDate);
+                    const e = new Date(p.endDate);
+                    return s <= currentDate && currentDate <= e;
+                });
+                if (paused)
+                    return;
                 // その日のパターンを確認
                 const dayPattern = contract.patterns.find((p) => p.dayOfWeek === dayOfWeek);
                 if (dayPattern && dayPattern.quantity > 0) {
@@ -338,6 +323,7 @@ exports.reportsRepository = {
         console.log('取得した契約数:', contracts.length);
         let totalAmount = 0;
         const invoiceDetails = [];
+        const deliveriesByDate = {};
         // 各契約について期間内の配達予定を計算
         for (const contract of contracts) {
             console.log(`契約: ${contract.product.name} - 単価: ${contract.unitPrice}円`);
@@ -350,6 +336,13 @@ exports.reportsRepository = {
                 const pattern = contract.patterns.find(p => p.dayOfWeek === dayOfWeek);
                 if (pattern && pattern.quantity > 0) {
                     deliveryCount += pattern.quantity;
+                    const y = currentDate.getFullYear();
+                    const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+                    const d = String(currentDate.getDate()).padStart(2, '0');
+                    const key = `${y}-${m}-${d}`;
+                    if (!deliveriesByDate[key])
+                        deliveriesByDate[key] = [];
+                    deliveriesByDate[key].push({ productName: contract.product.name, quantity: pattern.quantity });
                 }
                 // 次の日に進む
                 currentDate.setDate(currentDate.getDate() + 1);
@@ -381,7 +374,8 @@ exports.reportsRepository = {
         // 請求詳細も返す（PDFに使用）
         return {
             ...inv,
-            details: invoiceDetails
+            details: invoiceDetails,
+            deliveriesByDate,
         };
     },
     async listInvoiceHistory(customerId) {

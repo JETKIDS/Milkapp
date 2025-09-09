@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import path from 'path';
+import dotenv from 'dotenv';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -15,6 +17,7 @@ import reportsRouter from './routes/reports';
 import customerDetailRouter from './routes/customerDetail';
 import dashboardRouter from './routes/dashboard';
 import docsRouter from './routes/docs';
+import { pausesRouter } from './routes/contracts';
 import storesRouter from './routes/stores';
 import { generateOpenApiDocument } from './openapi/schema';
 
@@ -43,6 +46,7 @@ app.use('/api/reports', reportsRouter);
 app.use('/api/customers/:id', customerDetailRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/stores', storesRouter);
+app.use('/api/customers/:id/contracts', pausesRouter);
 app.use('/docs', docsRouter);
 app.get('/docs.json', (_req, res) => {
   const doc = generateOpenApiDocument();

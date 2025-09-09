@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.patternsRouter = void 0;
+exports.pausesRouter = exports.patternsRouter = void 0;
 const express_1 = require("express");
 const contractsService_1 = require("../services/contractsService");
 const router = (0, express_1.Router)({ mergeParams: true });
@@ -87,3 +87,15 @@ exports.patternsRouter.delete('/:patternId', async (req, res, next) => {
     }
 });
 exports.default = router;
+// 休配
+exports.pausesRouter = (0, express_1.Router)({ mergeParams: true });
+exports.pausesRouter.post('/:contractId/pauses', async (req, res, next) => {
+    try {
+        const id = Number(req.params.contractId);
+        const created = await contractsService_1.contractsService.createPause(id, req.body);
+        res.status(201).json({ success: true, data: created });
+    }
+    catch (e) {
+        next(e);
+    }
+});

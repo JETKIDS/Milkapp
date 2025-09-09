@@ -1,9 +1,13 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reportsService = exports.courseInvoiceSchema = exports.invoiceSchema = exports.listFilterSchema = void 0;
 const zod_1 = require("zod");
 const reportsRepository_1 = require("../repositories/reportsRepository");
 const pdfUtil_1 = require("../pdf/pdfUtil");
+const prisma_1 = __importDefault(require("../lib/prisma"));
 exports.listFilterSchema = zod_1.z.object({
     startDate: zod_1.z.string().datetime().optional(),
     endDate: zod_1.z.string().datetime().optional(),
@@ -73,4 +77,33 @@ exports.reportsService = {
         }
         return (0, pdfUtil_1.generateMultiInvoicePdf)(sections);
     },
+    async buildInvoicePdfPayload(customerId, startDate, endDate) {
+        const inv = await reportsRepository_1.reportsRepository.createInvoice({ customerId, startDate, endDate });
+        const store = await prisma_1.default.store.findFirst({ orderBy: { id: 'desc' } });
+        const customer = await prisma_1.default.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true, address: true } });
+        const start = new Date(startDate);
+        const month = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+        const days = Object.entries(inv.deliveriesByDate || {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, items]) => ({ date, items }));
+        const subtotal = Number(inv.totalAmount || 0);
+        const TAX_RATE = 0.10; // 税率（必要に応じて設定）
+        const tax = Math.floor(subtotal * TAX_RATE);
+        const total = subtotal + tax;
+        return {
+            title: `請求書 - ${customer?.name ?? '顧客'} 様`,
+            headers: ['商品名', '単価', '数量', '金額'],
+            rows: [
+                ...inv.details.map((d) => [d.productName, `${Number(d.unitPrice).toLocaleString('ja-JP')}円`, String(d.quantity), `${Number(d.amount).toLocaleString('ja-JP')}円`]),
+                ['', '', '合計', `${subtotal.toLocaleString('ja-JP')}円`],
+            ],
+            customer: { name: customer?.name ?? '', address: customer?.address ?? '' },
+            totals: { subtotal, tax, total },
+            calendar: {
+                month,
+                days,
+                footerStore: store ? { name: store.name, address: store.address, phone: store.phone } : undefined,
+            },
+        };
+    }
 };
