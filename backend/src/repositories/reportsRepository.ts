@@ -103,6 +103,13 @@ export const reportsRepository = {
                   }
                 },
                 pauses: true,
+                patternChanges: {
+                  where: {
+                    changeDate: { lte: date }
+                  },
+                  orderBy: { changeDate: 'desc' },
+                  take: 1
+                }
               }
             }
           }
@@ -132,6 +139,13 @@ export const reportsRepository = {
               }
             },
             pauses: true,
+            patternChanges: {
+              where: {
+                changeDate: { lte: date }
+              },
+              orderBy: { changeDate: 'desc' },
+              take: 1
+            }
           }
         }
       }
@@ -172,7 +186,14 @@ export const reportsRepository = {
             return true;
           })
           .map(contract => {
-            const qty = contract.patterns[0].quantity;
+            // パターン変更履歴をチェック
+            let effectiveQuantity = contract.patterns[0]?.quantity || 0;
+            if (contract.patternChanges && contract.patternChanges.length > 0) {
+              const latestChange = contract.patternChanges[0];
+              const changePatterns = JSON.parse(latestChange.patterns);
+              effectiveQuantity = changePatterns[dayOfWeek] || 0;
+            }
+            
             const paused = Array.isArray(contract.pauses) && contract.pauses.some((p: any) => {
               const s = new Date(p.startDate);
               const e = new Date(p.endDate);
@@ -195,7 +216,7 @@ export const reportsRepository = {
             
             return {
               productName: contract.product.name,
-              quantity: qty,
+              quantity: effectiveQuantity,
               unitPrice: contract.unitPrice,
               paused,
               cancelled,

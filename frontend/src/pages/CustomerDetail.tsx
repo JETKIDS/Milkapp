@@ -39,13 +39,17 @@ export function CustomerDetailPage() {
 	// 契約操作モーダル用の状態
 	const [contractOpsOpen, setContractOpsOpen] = React.useState(false);
 	const [selectedContractId, setSelectedContractId] = React.useState<number | null>(null);
-	const [contractOpsTab, setContractOpsTab] = React.useState<'add'|'pattern'|'pause'|'cancel'>('pattern');
+	const [contractOpsTab, setContractOpsTab] = React.useState<'add'|'pattern'|'pause'|'cancel'|'patternChange'>('pattern');
 	const [allProducts, setAllProducts] = React.useState<any[]>([]);
 	const [addForm, setAddForm] = React.useState<{ productId?: number; startDate?: string; unitPrice?: number; days: Record<number, number> }>({ days: {0:0,1:0,2:0,3:0,4:0,5:0,6:0} });
 	const [patternForm, setPatternForm] = React.useState<Record<number, number>>({0:0,1:0,2:0,3:0,4:0,5:0,6:0});
 	const selectedContract = React.useMemo(()=> contracts.find((c:any)=>c.id===selectedContractId), [contracts, selectedContractId]);
 	const [pauseForm, setPauseForm] = React.useState<{ startDate?: string; endDate?: string }>({ startDate: undefined, endDate: undefined });
 	const [cancelForm, setCancelForm] = React.useState<{ cancelDate?: string }>({ cancelDate: undefined });
+	const [patternChangeForm, setPatternChangeForm] = React.useState<{ changeDate?: string; patterns: Record<number, number> }>({ 
+		changeDate: undefined, 
+		patterns: {0:0,1:0,2:0,3:0,4:0,5:0,6:0} 
+	});
 	React.useEffect(() => {
 		const onMove = (e: MouseEvent) => {
 			if (!sidebarDragRef.current.isDragging) return;
@@ -126,6 +130,16 @@ export function CustomerDetailPage() {
 				contractsArray = [];
 			}
 			
+			// 各契約のパターン変更履歴を取得
+			for (const contract of contractsArray) {
+				try {
+					const patternChanges = await getDataTyped(`/api/customers/${customerId}/contracts/${contract.id}/pattern-changes`) as any;
+					contract.patternChanges = Array.isArray(patternChanges) ? patternChanges : (patternChanges?.data || []);
+				} catch (e) {
+					console.log(`契約 ${contract.id} のパターン変更履歴の取得に失敗しました:`, e);
+					contract.patternChanges = [];
+				}
+			}
 
 			setContracts(contractsArray);
 			
@@ -188,10 +202,10 @@ export function CustomerDetailPage() {
 		}
 	}, [calendarData, currentDate, contracts]);
 
-	// カレンダーデータ生成
-	const generateCalendarData = (contractsData: any[]) => {
-		const year = currentDate.getFullYear();
-		const month = currentDate.getMonth();
+	// カレンダーデータ生成（指定された日付で）
+	const generateCalendarDataWithDate = (contractsData: any[], targetDate: Date) => {
+		const year = targetDate.getFullYear();
+		const month = targetDate.getMonth();
 		
 		// 月の最初と最後の日を取得
 		const firstDay = new Date(year, month, 1);
@@ -214,14 +228,47 @@ export function CustomerDetailPage() {
 				const currentDayDate = new Date(year, month, day);
 				currentDayDate.setHours(0, 0, 0, 0); // 時間をリセット
 				
-				// 契約開始日以降の場合のみ配達を表示
-				if (currentDayDate >= contractStartDate && contract.patterns) {
-					contract.patterns.forEach((pattern: any) => {
+				// 解約日をチェック
+				let isAfterCancelDate = false;
+				if (contract.cancelDate) {
+					const cancelDate = new Date(contract.cancelDate);
+					cancelDate.setHours(0, 0, 0, 0);
+					isAfterCancelDate = currentDayDate > cancelDate;
+				}
+				
+				// 契約開始日以降かつ解約日以前の場合のみ配達を表示
+				if (currentDayDate >= contractStartDate && !isAfterCancelDate && contract.patterns) {
+					// パターン変更履歴をチェック
+					let effectivePatterns = contract.patterns;
+					if (contract.patternChanges && contract.patternChanges.length > 0) {
+						// その日以降に適用される最新のパターン変更を取得
+						const applicableChange = contract.patternChanges
+							.filter((change: any) => {
+								const changeDate = new Date(change.changeDate);
+								changeDate.setHours(0, 0, 0, 0);
+								return changeDate <= currentDayDate; // 変更日当日から適用
+							})
+							.sort((a: any, b: any) => new Date(b.changeDate).getTime() - new Date(a.changeDate).getTime())[0];
+						
+						if (applicableChange) {
+							// パターン変更履歴のパターンを使用
+							const changePatterns = JSON.parse(applicableChange.patterns);
+							effectivePatterns = Object.entries(changePatterns).map(([dayOfWeek, quantity]) => ({
+								dayOfWeek: parseInt(dayOfWeek),
+								quantity: quantity as number
+							}));
+						}
+					}
+					
+					// 曜日が一致するパターンを探す
+					effectivePatterns.forEach((pattern: any) => {
 						if (pattern.dayOfWeek === dayOfWeek && pattern.quantity > 0) {
 							deliveries.push({
-								productName: contract.product?.name || `商品ID: ${contract.productId}`,
+								contractId: contract.id,
+								productName: contract.product?.name || '不明な商品',
 								quantity: pattern.quantity,
-								unitPrice: contract.unitPrice || 0
+								unitPrice: contract.unitPrice || 0,
+								totalPrice: (contract.unitPrice || 0) * pattern.quantity
 							});
 						}
 					});
@@ -229,14 +276,21 @@ export function CustomerDetailPage() {
 			});
 			
 			calendar.push({
-				day,
-				dayOfWeek,
-				deliveries,
-				total: deliveries.reduce((sum, d) => sum + (d.quantity * d.unitPrice), 0)
+				day: day,
+				date: date,
+				dayOfWeek: dayOfWeek,
+				deliveries: deliveries,
+				totalQuantity: deliveries.reduce((sum, d) => sum + d.quantity, 0),
+				totalPrice: deliveries.reduce((sum, d) => sum + d.totalPrice, 0)
 			});
 		}
 		
 		setCalendarData(calendar);
+	};
+
+	// カレンダーデータ生成
+	const generateCalendarData = (contractsData: any[]) => {
+		generateCalendarDataWithDate(contractsData, currentDate);
 	};
 
 	// 月を変更
@@ -244,6 +298,10 @@ export function CustomerDetailPage() {
 		const newDate = new Date(currentDate);
 		newDate.setMonth(newDate.getMonth() + direction);
 		setCurrentDate(newDate);
+		// 月変更時にカレンダーデータを再生成（新しい日付で）
+		if (contracts.length > 0) {
+			generateCalendarDataWithDate(contracts, newDate);
+		}
 	};
 
 	const formatCurrency = (n: number) => new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(n);
@@ -357,9 +415,23 @@ export function CustomerDetailPage() {
 		try {
 			const contractsData = await getDataTyped<any>(`/api/customers/${customerId}/contracts`);
 			const contractsArray = Array.isArray(contractsData) ? contractsData : (contractsData?.data ?? []);
+			
+			// 各契約のパターン変更履歴を取得
+			for (const contract of contractsArray) {
+				try {
+					const patternChanges = await getDataTyped(`/api/customers/${customerId}/contracts/${contract.id}/pattern-changes`) as any;
+					contract.patternChanges = Array.isArray(patternChanges) ? patternChanges : (patternChanges?.data || []);
+				} catch (e) {
+					console.log(`契約 ${contract.id} のパターン変更履歴の取得に失敗しました:`, e);
+					contract.patternChanges = [];
+				}
+			}
+			
 			setContracts(contractsArray);
 			generateCalendarData(contractsArray);
-		} catch {}
+		} catch (error) {
+			console.error('契約データの取得に失敗しました:', error);
+		}
 	};
 
 	const submitAddProduct = async () => {
@@ -436,6 +508,21 @@ export function CustomerDetailPage() {
 			toast.notify('success',`解約しました（解約日: ${cancelForm.cancelDate}）`); 
 		} catch { 
 			toast.notify('error','解約に失敗しました'); 
+		}
+	};
+
+	const submitPatternChange = async () => {
+		if (!selectedContractId || !patternChangeForm.changeDate) return;
+		try {
+			await postDataTyped(`/api/customers/${customerId}/contracts/${selectedContractId}/pattern-changes`, {
+				changeDate: patternChangeForm.changeDate,
+				patterns: patternChangeForm.patterns
+			});
+			await reloadContracts();
+			setContractOpsOpen(false);
+			toast.notify('success', `パターン変更を登録しました（変更日: ${patternChangeForm.changeDate}）`);
+		} catch {
+			toast.notify('error', 'パターン変更の登録に失敗しました');
 		}
 	};
 
@@ -644,9 +731,10 @@ export function CustomerDetailPage() {
 													const isCancelDate = cancelDate && currentDayDate.getTime() === cancelDate.getTime();
 													const isAfterCancelDate = cancelDate && currentDayDate > cancelDate;
 													
-													const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === dayData.dayOfWeek);
-													// 解約日以降は配達パターンを無効にする
-													const quantity = (currentDayDate >= contractStartDate && !isAfterCancelDate && pattern) ? pattern.quantity || 0 : 0;
+													// カレンダーデータから配達情報を取得
+													const dayDeliveries = calendarData.find(d => d.day === dayData.day)?.deliveries || [];
+													const contractDelivery = dayDeliveries.find(d => d.contractId === contract.id);
+													const quantity = contractDelivery ? contractDelivery.quantity : 0;
 													const hasDelivery = quantity > 0;
 													return (
 														<div key={dayIndex} onClick={()=>openContractOps(contract.id, currentDayDate)} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'normal', cursor: 'pointer' }}>
@@ -689,16 +777,9 @@ export function CustomerDetailPage() {
 													<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 														{contracts.map((contract: any) => {
 															const monthlyQuantity = calendarData.reduce((sum, day) => {
-																const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
-																const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
-																dayDate.setHours(0, 0, 0, 0);
-																
-																// 解約日以降は配達を除外
-																const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
-																cancelDate?.setHours(0, 0, 0, 0);
-																const isAfterCancelDate = cancelDate && dayDate > cancelDate;
-																
-																return sum + ((pattern?.quantity || 0) * (isAfterCancelDate ? 0 : 1));
+																const dayDeliveries = day.deliveries || [];
+																const contractDelivery = dayDeliveries.find(d => d.contractId === contract.id);
+																return sum + (contractDelivery ? contractDelivery.quantity : 0);
 															}, 0);
 															const unitPrice = contract.unitPrice || contract.product?.price || 0;
 															return (
@@ -776,33 +857,10 @@ export function CustomerDetailPage() {
 								<div style={{ fontSize: '14px', marginBottom: '8px' }}>
 									<div>契約商品数: {contracts.length}件</div>
 									<div>配達予定日数: {calendarData.filter(day => {
-										const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
-										dayDate.setHours(0, 0, 0, 0);
-										
-										return contracts.some(contract => {
-											const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
-											cancelDate?.setHours(0, 0, 0, 0);
-											const isAfterCancelDate = cancelDate && dayDate > cancelDate;
-											
-											return !isAfterCancelDate && contract.patterns?.some((p: any) => p.dayOfWeek === day.dayOfWeek && p.quantity > 0);
-										});
+										return (day.totalQuantity || 0) > 0;
 									}).length}日</div>
 									<div>月間配達本数: {calendarData.reduce((sum, day) => {
-										const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
-										dayDate.setHours(0, 0, 0, 0);
-										
-										let dayTotal = 0;
-										contracts.forEach(contract => {
-											const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
-											cancelDate?.setHours(0, 0, 0, 0);
-											const isAfterCancelDate = cancelDate && dayDate > cancelDate;
-											
-											if (!isAfterCancelDate) {
-												const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
-												dayTotal += pattern?.quantity || 0;
-											}
-										});
-										return sum + dayTotal;
+										return sum + (day.totalQuantity || 0);
 									}, 0)}個</div>
 								</div>
 								<div style={{ 
@@ -813,23 +871,7 @@ export function CustomerDetailPage() {
 									paddingTop: '8px'
 								}}>
 								{formatCurrency(calendarData.reduce((sum, day) => {
-									const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
-									dayDate.setHours(0, 0, 0, 0);
-									
-									let dayTotal = 0;
-									contracts.forEach(contract => {
-										const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
-										cancelDate?.setHours(0, 0, 0, 0);
-										const isAfterCancelDate = cancelDate && dayDate > cancelDate;
-										
-										if (!isAfterCancelDate) {
-											const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
-											const quantity = pattern?.quantity || 0;
-											const unitPrice = contract.unitPrice || contract.product?.price || 0;
-											dayTotal += quantity * unitPrice;
-										}
-									});
-									return sum + dayTotal;
+									return sum + (day.totalPrice || 0);
 								}, 0))}
 								</div>
 							</div>
@@ -1046,6 +1088,7 @@ export function CustomerDetailPage() {
 					<div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
 						<button className={contractOpsTab==='add'?'' as any:'ghost'} onClick={()=>setContractOpsTab('add')}>商品追加</button>
 						<button className={contractOpsTab==='pattern'?'' as any:'ghost'} onClick={()=>setContractOpsTab('pattern')} disabled={!selectedContractId}>お届けパターン変更</button>
+						<button className={contractOpsTab==='patternChange'?'' as any:'ghost'} onClick={()=>setContractOpsTab('patternChange')} disabled={!selectedContractId}>期間指定パターン変更</button>
 						<button className={contractOpsTab==='pause'?'' as any:'ghost'} onClick={()=>setContractOpsTab('pause')} disabled={!selectedContractId}>休配</button>
 						<button className={contractOpsTab==='cancel'?'' as any:'ghost'} onClick={()=>setContractOpsTab('cancel')} disabled={!selectedContractId}>解約</button>
 					</div>
@@ -1138,6 +1181,53 @@ export function CustomerDetailPage() {
 									}}
 								>
 									解約する
+								</button>
+							</div>
+						</div>
+					)}
+					{contractOpsTab==='patternChange' && selectedContractId && (
+						<div style={{ display: 'grid', gap: 8 }}>
+							<div>指定した日付以降のパターンを変更します。変更日を指定してください。</div>
+							<div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+								<label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+									変更日
+									<input 
+										type="date" 
+										value={patternChangeForm.changeDate ?? ''} 
+										onChange={(e)=> setPatternChangeForm(prev=>({ ...prev, changeDate: e.target.value }))} 
+										style={{ width: 130 }} 
+									/>
+								</label>
+							</div>
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8 }}>
+								{['日','月','火','水','木','金','土'].map((d,idx)=> (
+									<label key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems:'center', fontSize: 12 }}>
+										<span>{d}</span>
+										<input 
+											type="number" 
+											min={0} 
+											value={patternChangeForm.patterns[idx]??0} 
+											onChange={(e)=>setPatternChangeForm(prev=>({ 
+												...prev, 
+												patterns: { ...prev.patterns, [idx]: Number(e.target.value)||0 }
+											}))} 
+											style={{ width: 56 }} 
+										/>
+									</label>
+								))}
+							</div>
+							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+								<button className="ghost" onClick={closeContractOps}>キャンセル</button>
+								<button 
+									onClick={submitPatternChange} 
+									disabled={!patternChangeForm.changeDate}
+									style={{ 
+										backgroundColor: !patternChangeForm.changeDate ? '#ccc' : '#1976d2', 
+										color: 'white',
+										cursor: !patternChangeForm.changeDate ? 'not-allowed' : 'pointer'
+									}}
+								>
+									パターン変更を登録
 								</button>
 							</div>
 						</div>

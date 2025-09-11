@@ -29,6 +29,14 @@ export interface CreatePatternInput {
 
 export interface UpdatePatternInput extends Partial<CreatePatternInput> {}
 
+export interface CreatePatternChangeInput {
+  contractId: number;
+  changeDate: string; // YYYY-MM-DD形式
+  patterns: Record<number, number>; // 曜日別数量 {0: 2, 1: 3, ...}
+}
+
+export interface UpdatePatternChangeInput extends Partial<CreatePatternChangeInput> {}
+
 export const contractsRepository = {
   // contracts
   async listByCustomer(customerId: number) {
@@ -121,6 +129,42 @@ export const contractsRepository = {
 	// pauses
 	async createPause(contractId: number, startDateISO: string, endDateISO: string) {
 		return prisma.contractPause.create({ data: { contractId, startDate: new Date(startDateISO), endDate: new Date(endDateISO) } });
+	},
+
+	// pattern changes
+	async listPatternChanges(contractId: number) {
+		return prisma.patternChangeHistory.findMany({ 
+			where: { contractId },
+			orderBy: { changeDate: 'asc' }
+		});
+	},
+	async createPatternChange(input: CreatePatternChangeInput) {
+		return prisma.patternChangeHistory.create({
+			data: {
+				contractId: input.contractId,
+				changeDate: new Date(input.changeDate),
+				patterns: JSON.stringify(input.patterns),
+			},
+		});
+	},
+	async updatePatternChange(id: number, input: UpdatePatternChangeInput) {
+		const data: any = { ...input };
+		if (input.changeDate) data.changeDate = new Date(input.changeDate);
+		if (input.patterns) data.patterns = JSON.stringify(input.patterns);
+		return prisma.patternChangeHistory.update({ where: { id }, data });
+	},
+	async removePatternChange(id: number) {
+		return prisma.patternChangeHistory.delete({ where: { id } });
+	},
+	async getPatternChangesByDate(contractId: number, targetDate: string) {
+		// 指定日付以前の最新のパターン変更を取得
+		return prisma.patternChangeHistory.findFirst({
+			where: {
+				contractId,
+				changeDate: { lte: new Date(targetDate) }
+			},
+			orderBy: { changeDate: 'desc' }
+		});
 	},
 };
 

@@ -35,6 +35,13 @@ export const pauseCreateSchema = z.object({
   endDate: z.string().min(1),
 });
 
+export const patternChangeCreateSchema = z.object({
+  contractId: z.number().int().positive(),
+  changeDate: z.string().min(1), // YYYY-MM-DD形式
+  patterns: z.record(z.number().int().min(0)), // 曜日別数量 {0: 2, 1: 3, ...}
+});
+export const patternChangeUpdateSchema = patternChangeCreateSchema.partial();
+
 export const contractsService = {
   async listByCustomer(customerId: number) {
     return contractsRepository.listByCustomer(customerId);
@@ -97,6 +104,25 @@ export const contractsService = {
     const data = pauseCreateSchema.parse(input);
     if (new Date(data.endDate) < new Date(data.startDate)) throw new Error('INVALID_RANGE');
     return contractsRepository.createPause(contractId, data.startDate, data.endDate);
+  },
+
+  // pattern changes
+  async listPatternChanges(contractId: number) {
+    return contractsRepository.listPatternChanges(contractId);
+  },
+  async createPatternChange(input: unknown) {
+    const data = patternChangeCreateSchema.parse(input);
+    return contractsRepository.createPatternChange(data);
+  },
+  async updatePatternChange(id: number, input: unknown) {
+    const data = patternChangeUpdateSchema.parse(input);
+    return contractsRepository.updatePatternChange(id, data);
+  },
+  async removePatternChange(id: number) {
+    return contractsRepository.removePatternChange(id);
+  },
+  async getPatternChangesByDate(contractId: number, targetDate: string) {
+    return contractsRepository.getPatternChangesByDate(contractId, targetDate);
   },
 };
 

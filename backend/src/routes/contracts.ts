@@ -99,4 +99,58 @@ pausesRouter.post('/:contractId/pauses', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// パターン変更履歴
+export const patternChangesRouter = Router({ mergeParams: true });
+
+patternChangesRouter.get('/:contractId/pattern-changes', async (req, res, next) => {
+  try {
+    const contractId = Number(req.params.contractId);
+    const items = await contractsService.listPatternChanges(contractId);
+    res.json({ success: true, data: items });
+  } catch (e) {
+    next(e);
+  }
+});
+
+patternChangesRouter.post('/:contractId/pattern-changes', async (req, res, next) => {
+  try {
+    const contractId = Number(req.params.contractId);
+    const created = await contractsService.createPatternChange({ ...req.body, contractId });
+    res.status(201).json({ success: true, data: created });
+  } catch (e) {
+    next(e);
+  }
+});
+
+patternChangesRouter.put('/:contractId/pattern-changes/:changeId', async (req, res, next) => {
+  try {
+    const changeId = Number(req.params.changeId);
+    const updated = await contractsService.updatePatternChange(changeId, req.body);
+    res.json({ success: true, data: updated });
+  } catch (e) {
+    next(e);
+  }
+});
+
+patternChangesRouter.delete('/:contractId/pattern-changes/:changeId', async (req, res, next) => {
+  try {
+    const changeId = Number(req.params.changeId);
+    await contractsService.removePatternChange(changeId);
+    res.status(204).send();
+  } catch (e) {
+    next(e);
+  }
+});
+
+patternChangesRouter.get('/:contractId/pattern-changes/by-date/:date', async (req, res, next) => {
+  try {
+    const contractId = Number(req.params.contractId);
+    const targetDate = req.params.date;
+    const item = await contractsService.getPatternChangesByDate(contractId, targetDate);
+    res.json({ success: true, data: item });
+  } catch (e) {
+    next(e);
+  }
+});
+
 
