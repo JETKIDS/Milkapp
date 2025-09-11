@@ -144,6 +144,7 @@ model CustomerProductContract {
   isActive    Boolean   @default(true)
   startDate   DateTime
   endDate     DateTime?
+  cancelDate  DateTime? // 解約日
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

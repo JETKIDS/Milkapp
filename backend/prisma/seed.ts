@@ -11,10 +11,11 @@ function pick<T>(arr: T[]): T {
 }
 
 async function resetAll() {
-  // 参照制約順に削除
+  // 参照制約順に削除（参照先から先に削除）
   await prisma.deliveryRecord.deleteMany();
   await prisma.order.deleteMany();
   await prisma.deliveryPattern.deleteMany();
+  await prisma.contractPause.deleteMany();
   await prisma.customerProductContract.deleteMany();
   await prisma.deliverySchedule.deleteMany();
   await prisma.customerCoursePosition.deleteMany();

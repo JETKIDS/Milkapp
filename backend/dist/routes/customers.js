@@ -67,9 +67,18 @@ router.get('/', async (req, res, next) => {
         if (conditions.length > 0) {
             where = { AND: conditions };
         }
-        const orderBy = sortKey ? { [String(sortKey)]: (String(sortDir) === 'desc' ? 'desc' : 'asc') } : { id: 'asc' };
         const prisma = (await Promise.resolve().then(() => __importStar(require('../lib/prisma')))).default;
         const total = await prisma.customer.count({ where });
+        // orderByを安全に構築
+        let orderBy = { id: 'asc' };
+        if (sortKey && typeof sortKey === 'string') {
+            // 有効なソートキーのみ許可
+            const validSortKeys = ['id', 'name', 'address', 'phone', 'email', 'createdAt', 'updatedAt'];
+            if (validSortKeys.includes(sortKey)) {
+                const direction = String(sortDir) === 'desc' ? 'desc' : 'asc';
+                orderBy = { [sortKey]: direction };
+            }
+        }
         const items = await prisma.customer.findMany({
             where,
             orderBy,

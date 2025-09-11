@@ -34,17 +34,18 @@ router.put('/:contractId', async (req, res, next) => {
   }
 });
 
-router.delete('/:contractId', async (req, res, next) => {
+router.post('/:contractId/cancel', async (req, res, next) => {
   try {
     const id = Number(req.params.contractId);
-    await contractsService.removeContract(id);
-    res.status(204).send();
+    const { cancelDate } = req.body;
+    const updated = await contractsService.cancelContract(id, cancelDate);
+    res.json({ success: true, data: updated });
   } catch (e) {
     next(e);
   }
 });
 
-// /api/customers/:id/delivery-patterns
+// /api/customers/:id/contracts/:contractId/patterns
 export const patternsRouter = Router();
 
 patternsRouter.get('/:contractId', async (req, res, next) => {

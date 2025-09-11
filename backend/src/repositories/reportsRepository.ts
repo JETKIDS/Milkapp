@@ -42,7 +42,6 @@ export const reportsRepository = {
         deliveryCourse: true,
         contracts: {
           where: {
-            isActive: true,
             startDate: { lte: targetDate },
             OR: [
               { endDate: null },
@@ -88,12 +87,12 @@ export const reportsRepository = {
           include: {
             contracts: {
               where: {
-                isActive: true,
                 startDate: { lte: date }, // 契約開始日以降のみ
                 OR: [
                   { endDate: null },
                   { endDate: { gte: date } },
                 ],
+                // 解約された契約も含める（解約日判定で処理するため）
               },
               include: {
                 product: true,
@@ -101,7 +100,6 @@ export const reportsRepository = {
                   where: {
                     dayOfWeek: dayOfWeek,
                     quantity: { gt: 0 }, // 数量が0より大きいもののみ
-                    isActive: true,
                   }
                 },
                 pauses: true,
@@ -119,7 +117,6 @@ export const reportsRepository = {
       include: {
         contracts: {
           where: {
-            isActive: true,
             startDate: { lte: date },
             OR: [
               { endDate: null },
@@ -132,7 +129,6 @@ export const reportsRepository = {
               where: {
                 dayOfWeek: dayOfWeek,
                 quantity: { gt: 0 },
-                isActive: true,
               }
             },
             pauses: true,
@@ -153,8 +149,28 @@ export const reportsRepository = {
     // 配達がある顧客、または休配の顧客のみフィルタリング（休配は数量欄に「休」を表示するため保持）
     const deliveryList = allCustomersOrdered
       .map(customer => {
+        // デバッグログ
+        console.log(`[DEBUG] Customer ${customer.id} (${customer.name}): contracts count=${customer.contracts.length}`);
+        customer.contracts.forEach(contract => {
+          console.log(`[DEBUG] Contract ${contract.id}: cancelDate=${contract.cancelDate}, isActive=${contract.isActive}, patterns=${contract.patterns.length}`);
+        });
+        
         const deliveries = customer.contracts
-          .filter(contract => contract.patterns.length > 0)
+          .filter(contract => {
+            // 配達パターンがない場合は除外
+            if (contract.patterns.length === 0) return false;
+            
+            // 解約日以降の場合は除外（解約日当日は含める）
+            if (contract.cancelDate) {
+              const cancelDate = new Date(contract.cancelDate);
+              cancelDate.setHours(0, 0, 0, 0);
+              const targetDate = new Date(date);
+              targetDate.setHours(0, 0, 0, 0);
+              if (targetDate > cancelDate) return false;
+            }
+            
+            return true;
+          })
           .map(contract => {
             const qty = contract.patterns[0].quantity;
             const paused = Array.isArray(contract.pauses) && contract.pauses.some((p: any) => {
@@ -162,11 +178,27 @@ export const reportsRepository = {
               const e = new Date(p.endDate);
               return s <= date && date <= e;
             });
+            
+            // 解約日判定（解約日当日のみ「解」を表示）
+            const cancelled = contract.cancelDate && (() => {
+              const cancelDate = new Date(contract.cancelDate);
+              cancelDate.setHours(0, 0, 0, 0);
+              const targetDate = new Date(date);
+              targetDate.setHours(0, 0, 0, 0);
+              const isCancelled = targetDate.getTime() === cancelDate.getTime();
+              
+              // デバッグログ
+              console.log(`[DEBUG] Contract ${contract.id}: cancelDate=${contract.cancelDate}, targetDate=${date}, isCancelled=${isCancelled}`);
+              
+              return isCancelled;
+            })();
+            
             return {
               productName: contract.product.name,
               quantity: qty,
               unitPrice: contract.unitPrice,
               paused,
+              cancelled,
             } as any;
           });
 
@@ -306,6 +338,15 @@ export const reportsRepository = {
       const dayOfWeek = currentDate.getDay();
       
       contracts.forEach((contract: any) => {
+        // 解約日以降の場合はスキップ（解約日当日は含める）
+        if (contract.cancelDate) {
+          const cancelDate = new Date(contract.cancelDate);
+          cancelDate.setHours(0, 0, 0, 0);
+          const targetDate = new Date(currentDate);
+          targetDate.setHours(0, 0, 0, 0);
+          if (targetDate > cancelDate) return;
+        }
+        
         // 休配期間に該当する場合はスキップ
         const paused = Array.isArray(contract.pauses) && contract.pauses.some((p: any) => {
           const s = new Date(p.startDate);

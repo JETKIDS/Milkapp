@@ -55,6 +55,9 @@ exports.contractsService = {
     async removeContract(id) {
         await contractsRepository_1.contractsRepository.removeContract(id);
     },
+    async cancelContract(id, cancelDate) {
+        return contractsRepository_1.contractsRepository.cancelContract(id, cancelDate);
+    },
     async listPatterns(contractId) {
         return contractsRepository_1.contractsRepository.listPatterns(contractId);
     },

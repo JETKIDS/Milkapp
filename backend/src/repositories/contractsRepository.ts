@@ -15,6 +15,7 @@ export interface CreateContractInput {
   friday?: number;
   saturday?: number;
   isActive?: boolean;
+  cancelDate?: string; // 解約日
 }
 
 export interface UpdateContractInput extends Partial<CreateContractInput> {}
@@ -75,6 +76,7 @@ export const contractsRepository = {
   async updateContract(id: number, input: UpdateContractInput) {
     const data: any = { ...input };
     if (input.startDate) data.startDate = new Date(input.startDate);
+    if (input.cancelDate) data.cancelDate = new Date(input.cancelDate);
     return prisma.customerProductContract.update({ where: { id }, data });
   },
   async removeContract(id: number) {
@@ -82,6 +84,16 @@ export const contractsRepository = {
       prisma.deliveryPattern.deleteMany({ where: { contractId: id } }),
       prisma.customerProductContract.delete({ where: { id } }),
     ]);
+  },
+  async cancelContract(id: number, cancelDate: string) {
+    // 解約日を設定し、契約を非アクティブにする
+    return prisma.customerProductContract.update({
+      where: { id },
+      data: {
+        cancelDate: new Date(cancelDate),
+        isActive: false,
+      },
+    });
   },
 
   // patterns
@@ -104,6 +116,7 @@ export const contractsRepository = {
   async removePattern(id: number) {
     return prisma.deliveryPattern.delete({ where: { id } });
   },
+
 
 	// pauses
 	async createPause(contractId: number, startDateISO: string, endDateISO: string) {

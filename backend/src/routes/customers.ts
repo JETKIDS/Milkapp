@@ -5,7 +5,7 @@ const router = Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir, all } = req.query as any;
+    const { idSearch, nameSearch, phoneSearch, addressSearch, page, pageSize, sortKey, sortDir, all } = req.query;
     const p = Number(page) || 1;
     const ps = Math.min(Number(pageSize) || 10, 100);
     const returnAll = String(all).toLowerCase() === '1' || String(all).toLowerCase() === 'true';
@@ -41,9 +41,20 @@ router.get('/', async (req, res, next) => {
       where = { AND: conditions };
     }
     
-    const orderBy = sortKey ? { [String(sortKey)]: (String(sortDir) === 'desc' ? 'desc' : 'asc') } : { id: 'asc' } as any;
     const prisma = (await import('../lib/prisma')).default;
     const total = await prisma.customer.count({ where });
+    
+    // orderByを安全に構築
+    let orderBy: any = { id: 'asc' };
+    if (sortKey && typeof sortKey === 'string') {
+      // 有効なソートキーのみ許可
+      const validSortKeys = ['id', 'name', 'address', 'phone', 'email', 'createdAt', 'updatedAt'];
+      if (validSortKeys.includes(sortKey)) {
+        const direction = String(sortDir) === 'desc' ? 'desc' : 'asc';
+        orderBy = { [sortKey]: direction };
+      }
+    }
+    
     const items = await prisma.customer.findMany({
       where,
       orderBy,

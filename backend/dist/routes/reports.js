@@ -14,6 +14,7 @@ function formatDateYMDUTC(input) {
 }
 router.post('/delivery-list', async (req, res, next) => {
     try {
+        console.log('[DEBUG] delivery-list called with:', req.body);
         const items = await reportsService_1.reportsService.deliveryList(req.body);
         const headers = ['顧客', '住所', 'コース'];
         const rows = items.map((c) => [c.name, c.address, c.deliveryCourse?.name ?? '-']);
@@ -29,6 +30,7 @@ router.post('/delivery-list', async (req, res, next) => {
 // 新機能: 特定日付のコース別配達スケジュールPDF
 router.post('/delivery-schedule', async (req, res, next) => {
     try {
+        console.log('[DEBUG] delivery-schedule called with:', req.body);
         const { courseId, targetDate } = req.body;
         if (!courseId || !targetDate) {
             return res.status(400).json({ error: 'courseId and targetDate are required' });
@@ -44,7 +46,7 @@ router.post('/delivery-schedule', async (req, res, next) => {
                     deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                     deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                     delivery.productName,
-                    String(delivery.paused ? '休' : delivery.quantity)
+                    String(delivery.cancelled ? '解' : delivery.paused ? '休' : delivery.quantity)
                 ]);
             });
         });
@@ -61,6 +63,7 @@ router.post('/delivery-schedule', async (req, res, next) => {
 // 新機能: 複数日対応の配達スケジュールPDF
 router.post('/delivery-schedule-multi', async (req, res, next) => {
     try {
+        console.log('[DEBUG] delivery-schedule-multi called with:', req.body);
         const { courseId, courseIds, startDate, endDate } = req.body;
         // 複数コース対応
         if (courseIds && Array.isArray(courseIds) && courseIds.length > 0) {
@@ -95,7 +98,7 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
                                     deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                                     deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                                     delivery.productName,
-                                    String(delivery.paused ? '休' : delivery.quantity)
+                                    String(delivery.cancelled ? '解' : delivery.paused ? '休' : delivery.quantity)
                                 ]);
                             });
                         });
@@ -138,7 +141,7 @@ router.post('/delivery-schedule-multi', async (req, res, next) => {
                             deliveryIndex === 0 ? item.customerName : '', // 最初の商品のみ顧客名表示
                             deliveryIndex === 0 ? item.customerAddress : '', // 最初の商品のみ住所表示
                             delivery.productName,
-                            String(delivery.paused ? '休' : delivery.quantity)
+                            String(delivery.cancelled ? '解' : delivery.paused ? '休' : delivery.quantity)
                         ]);
                     });
                 });

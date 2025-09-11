@@ -76,7 +76,7 @@ app.use('/api/delivery-courses', deliveryCourses_1.default);
 app.use('/api/orders', orders_1.default);
 app.use('/api/schedules', schedules_1.default);
 app.use('/api/customers/:id/contracts', contracts_1.default);
-app.use('/api/customers/:id/delivery-patterns', contracts_1.patternsRouter);
+app.use('/api/customers/:id/contracts/:contractId', contracts_1.patternsRouter);
 app.use('/api/reports', reports_1.default);
 app.use('/api/customers/:id', customerDetail_1.default);
 app.use('/api/dashboard', dashboard_1.default);

@@ -18,6 +18,7 @@ export const contractCreateSchema = z.object({
   friday: z.number().min(0).optional(),
   saturday: z.number().min(0).optional(),
   isActive: z.boolean().optional().default(true),
+  cancelDate: z.string().optional(), // 解約日
 });
 export const contractUpdateSchema = contractCreateSchema.partial();
 
@@ -53,6 +54,9 @@ export const contractsService = {
   async removeContract(id: number) {
     await contractsRepository.removeContract(id);
   },
+  async cancelContract(id: number, cancelDate: string) {
+    return contractsRepository.cancelContract(id, cancelDate);
+  },
 
   async listPatterns(contractId: number) {
     return contractsRepository.listPatterns(contractId);
@@ -87,6 +91,7 @@ export const contractsService = {
   async removePattern(id: number) {
     await contractsRepository.removePattern(id);
   },
+
 
   async createPause(contractId: number, input: unknown) {
     const data = pauseCreateSchema.parse(input);

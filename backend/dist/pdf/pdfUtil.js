@@ -152,29 +152,40 @@ function generateTablePdf(title, headers, rows) {
             doc.restore();
             doc.strokeColor('#e2e8f0').rect(startX, y - 2, pageWidth, rowHeight + 10).stroke();
             x = startX;
-            // 休配行: 最終列が「休」なら薄い表示
-            const rowIsPaused = String(row[row.length - 1] ?? '').trim() === '休';
-            if (rowIsPaused) {
-                doc.save();
-                doc.fillColor('#9ca3af');
-                try {
-                    doc.opacity?.(0.7);
-                }
-                catch { }
-            }
+            // 休配・解約の判定
+            const lastColumn = String(row[row.length - 1] ?? '').trim();
+            const rowIsPaused = lastColumn === '休';
+            const rowIsCancelled = lastColumn === '解';
             for (let i = 0; i < headers.length; i++) {
                 const cell = row[i] ?? '';
                 const alignRight = isNumeric(cell) || headers[i].includes('価格');
-                doc.text(String(cell), x + padding, y + 3, { width: colWidths[i] - padding * 2, align: alignRight ? 'right' : 'left' });
-                x += colWidths[i];
-            }
-            if (rowIsPaused) {
-                try {
-                    doc.opacity?.(1);
+                // 休配時：商品名のみ薄く表示
+                if (rowIsPaused && headers[i] === '商品名') {
+                    doc.save();
+                    doc.fillColor('#9ca3af');
+                    try {
+                        doc.opacity?.(0.7);
+                    }
+                    catch { }
                 }
-                catch { }
-                doc.fillColor('black');
-                doc.restore();
+                // 解約時：商品名に横線を追加
+                if (rowIsCancelled && headers[i] === '商品名') {
+                    doc.save();
+                    doc.fillColor('#d32f2f'); // 赤色
+                }
+                doc.text(String(cell), x + padding, y + 3, { width: colWidths[i] - padding * 2, align: alignRight ? 'right' : 'left' });
+                // 解約時：商品名に横線を描画
+                if (rowIsCancelled && headers[i] === '商品名') {
+                    const textWidth = doc.widthOfString(String(cell), { width: colWidths[i] - padding * 2 });
+                    const lineY = y + 8; // テキストの中央に線を描画
+                    doc.moveTo(x + padding, lineY).lineTo(x + padding + textWidth, lineY).strokeColor('#d32f2f').stroke();
+                    doc.restore();
+                }
+                // 休配時の薄い表示を終了
+                if (rowIsPaused && headers[i] === '商品名') {
+                    doc.restore();
+                }
+                x += colWidths[i];
             }
             y += rowHeight + 10;
         }
@@ -265,28 +276,40 @@ function generateMultiCourseSchedulePdf(courseSchedules) {
                 doc.restore();
                 doc.strokeColor('#e2e8f0').rect(startX, y - 2, pageWidth, rowHeight + 10).stroke();
                 x = startX;
-                const rowIsPaused = String(row[row.length - 1] ?? '').trim() === '休';
-                if (rowIsPaused) {
-                    doc.save();
-                    doc.fillColor('#9ca3af');
-                    try {
-                        doc.opacity?.(0.7);
-                    }
-                    catch { }
-                }
+                // 休配・解約の判定
+                const lastColumn = String(row[row.length - 1] ?? '').trim();
+                const rowIsPaused = lastColumn === '休';
+                const rowIsCancelled = lastColumn === '解';
                 for (let i = 0; i < headers.length; i++) {
                     const cell = row[i] ?? '';
                     const alignRight = isNumeric(cell) || headers[i].includes('価格') || headers[i].includes('数量');
-                    doc.fontSize(10).text(String(cell), x + padding, y + 3, { width: colWidths[i] - padding * 2, align: alignRight ? 'right' : 'left' });
-                    x += colWidths[i];
-                }
-                if (rowIsPaused) {
-                    try {
-                        doc.opacity?.(1);
+                    // 休配時：商品名のみ薄く表示
+                    if (rowIsPaused && headers[i] === '商品名') {
+                        doc.save();
+                        doc.fillColor('#9ca3af');
+                        try {
+                            doc.opacity?.(0.7);
+                        }
+                        catch { }
                     }
-                    catch { }
-                    doc.fillColor('black');
-                    doc.restore();
+                    // 解約時：商品名に横線を追加
+                    if (rowIsCancelled && headers[i] === '商品名') {
+                        doc.save();
+                        doc.fillColor('#d32f2f'); // 赤色
+                    }
+                    doc.fontSize(10).text(String(cell), x + padding, y + 3, { width: colWidths[i] - padding * 2, align: alignRight ? 'right' : 'left' });
+                    // 解約時：商品名に横線を描画
+                    if (rowIsCancelled && headers[i] === '商品名') {
+                        const textWidth = doc.widthOfString(String(cell), { width: colWidths[i] - padding * 2 });
+                        const lineY = y + 8; // テキストの中央に線を描画
+                        doc.moveTo(x + padding, lineY).lineTo(x + padding + textWidth, lineY).strokeColor('#d32f2f').stroke();
+                        doc.restore();
+                    }
+                    // 休配時の薄い表示を終了
+                    if (rowIsPaused && headers[i] === '商品名') {
+                        doc.restore();
+                    }
+                    x += colWidths[i];
                 }
                 y += rowHeight + 10;
             }

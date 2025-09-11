@@ -57,6 +57,16 @@ exports.contractsRepository = {
             prisma_1.default.customerProductContract.delete({ where: { id } }),
         ]);
     },
+    async cancelContract(id, cancelDate) {
+        // 解約日を設定し、契約を非アクティブにする
+        return prisma_1.default.customerProductContract.update({
+            where: { id },
+            data: {
+                cancelDate: new Date(cancelDate),
+                isActive: false,
+            },
+        });
+    },
     // patterns
     async listPatterns(contractId) {
         return prisma_1.default.deliveryPattern.findMany({ where: { contractId } });

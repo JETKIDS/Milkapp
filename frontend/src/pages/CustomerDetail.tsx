@@ -45,6 +45,7 @@ export function CustomerDetailPage() {
 	const [patternForm, setPatternForm] = React.useState<Record<number, number>>({0:0,1:0,2:0,3:0,4:0,5:0,6:0});
 	const selectedContract = React.useMemo(()=> contracts.find((c:any)=>c.id===selectedContractId), [contracts, selectedContractId]);
 	const [pauseForm, setPauseForm] = React.useState<{ startDate?: string; endDate?: string }>({ startDate: undefined, endDate: undefined });
+	const [cancelForm, setCancelForm] = React.useState<{ cancelDate?: string }>({ cancelDate: undefined });
 	React.useEffect(() => {
 		const onMove = (e: MouseEvent) => {
 			if (!sidebarDragRef.current.isDragging) return;
@@ -347,6 +348,7 @@ export function CustomerDetailPage() {
 		const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
 		const iso = toLocalYmd(d);
 		setPauseForm({ startDate: iso, endDate: iso });
+		setCancelForm({ cancelDate: iso });
 	};
 
 	const closeContractOps = () => { setContractOpsOpen(false); setSelectedContractId(null); };
@@ -423,8 +425,18 @@ export function CustomerDetailPage() {
 		} catch { toast.notify('error','休配に失敗しました'); }
 	};
 	const submitCancel = async () => {
-		if (!selectedContractId) return;
-		try { await deleteVoid(`/api/customers/${customerId}/contracts/${selectedContractId}`); await reloadContracts(); setContractOpsOpen(false); toast.notify('success','解約しました'); } catch { toast.notify('error','解約に失敗しました'); }
+		if (!selectedContractId || !cancelForm.cancelDate) return;
+		try { 
+			await putDataTyped(`/api/customers/${customerId}/contracts/${selectedContractId}`, { 
+				cancelDate: cancelForm.cancelDate,
+				isActive: false 
+			}); 
+			await reloadContracts(); 
+			setContractOpsOpen(false); 
+			toast.notify('success',`解約しました（解約日: ${cancelForm.cancelDate}）`); 
+		} catch { 
+			toast.notify('error','解約に失敗しました'); 
+		}
 	};
 
 	return (
@@ -626,12 +638,22 @@ export function CustomerDetailPage() {
 													contractStartDate.setHours(0, 0, 0, 0);
 													const currentDayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayData.day);
 													currentDayDate.setHours(0, 0, 0, 0);
+													// 解約日判定
+													const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
+													cancelDate?.setHours(0, 0, 0, 0);
+													const isCancelDate = cancelDate && currentDayDate.getTime() === cancelDate.getTime();
+													const isAfterCancelDate = cancelDate && currentDayDate > cancelDate;
+													
 													const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === dayData.dayOfWeek);
-													const quantity = (currentDayDate >= contractStartDate && pattern) ? pattern.quantity || 0 : 0;
+													// 解約日以降は配達パターンを無効にする
+													const quantity = (currentDayDate >= contractStartDate && !isAfterCancelDate && pattern) ? pattern.quantity || 0 : 0;
 													const hasDelivery = quantity > 0;
 													return (
 														<div key={dayIndex} onClick={()=>openContractOps(contract.id, currentDayDate)} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'normal', cursor: 'pointer' }}>
 															{(() => {
+																// 解約日判定：解約日に「解」を表示
+																if (isCancelDate) return <span style={{ color: '#d32f2f', fontSize: 14, fontWeight: 'bold' }}>解</span>;
+																
 																// 休配判定：選択契約のpausesに現在日が含まれるか（契約データに含まれている想定）
 																const paused = (contract.pauses ?? []).some((p:any)=>{
 																	const ps = new Date(p.startDate); ps.setHours(0,0,0,0);
@@ -668,7 +690,15 @@ export function CustomerDetailPage() {
 														{contracts.map((contract: any) => {
 															const monthlyQuantity = calendarData.reduce((sum, day) => {
 																const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
-																return sum + (pattern?.quantity || 0);
+																const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
+																dayDate.setHours(0, 0, 0, 0);
+																
+																// 解約日以降は配達を除外
+																const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
+																cancelDate?.setHours(0, 0, 0, 0);
+																const isAfterCancelDate = cancelDate && dayDate > cancelDate;
+																
+																return sum + ((pattern?.quantity || 0) * (isAfterCancelDate ? 0 : 1));
 															}, 0);
 															const unitPrice = contract.unitPrice || contract.product?.price || 0;
 															return (
@@ -701,7 +731,15 @@ export function CustomerDetailPage() {
 								{contracts.map((contract, index) => {
 									const monthlyQuantity = calendarData.reduce((sum, day) => {
 										const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
-										return sum + (pattern?.quantity || 0);
+										const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
+										dayDate.setHours(0, 0, 0, 0);
+										
+										// 解約日以降は配達を除外
+										const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
+										cancelDate?.setHours(0, 0, 0, 0);
+										const isAfterCancelDate = cancelDate && dayDate > cancelDate;
+										
+										return sum + ((pattern?.quantity || 0) * (isAfterCancelDate ? 0 : 1));
 									}, 0);
 									const unitPrice = contract.unitPrice || contract.product?.price || 0;
 									const monthlyAmount = monthlyQuantity * unitPrice;
@@ -738,15 +776,31 @@ export function CustomerDetailPage() {
 								<div style={{ fontSize: '14px', marginBottom: '8px' }}>
 									<div>契約商品数: {contracts.length}件</div>
 									<div>配達予定日数: {calendarData.filter(day => {
-										return contracts.some(contract => 
-											contract.patterns?.some((p: any) => p.dayOfWeek === day.dayOfWeek && p.quantity > 0)
-										);
+										const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
+										dayDate.setHours(0, 0, 0, 0);
+										
+										return contracts.some(contract => {
+											const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
+											cancelDate?.setHours(0, 0, 0, 0);
+											const isAfterCancelDate = cancelDate && dayDate > cancelDate;
+											
+											return !isAfterCancelDate && contract.patterns?.some((p: any) => p.dayOfWeek === day.dayOfWeek && p.quantity > 0);
+										});
 									}).length}日</div>
 									<div>月間配達本数: {calendarData.reduce((sum, day) => {
+										const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
+										dayDate.setHours(0, 0, 0, 0);
+										
 										let dayTotal = 0;
 										contracts.forEach(contract => {
-											const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
-											dayTotal += pattern?.quantity || 0;
+											const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
+											cancelDate?.setHours(0, 0, 0, 0);
+											const isAfterCancelDate = cancelDate && dayDate > cancelDate;
+											
+											if (!isAfterCancelDate) {
+												const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
+												dayTotal += pattern?.quantity || 0;
+											}
 										});
 										return sum + dayTotal;
 									}, 0)}個</div>
@@ -758,16 +812,25 @@ export function CustomerDetailPage() {
 									borderTop: '1px solid #ccc',
 									paddingTop: '8px'
 								}}>
-									{formatCurrency(calendarData.reduce((sum, day) => {
-										let dayTotal = 0;
-										contracts.forEach(contract => {
+								{formatCurrency(calendarData.reduce((sum, day) => {
+									const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
+									dayDate.setHours(0, 0, 0, 0);
+									
+									let dayTotal = 0;
+									contracts.forEach(contract => {
+										const cancelDate = contract.cancelDate ? new Date(contract.cancelDate) : null;
+										cancelDate?.setHours(0, 0, 0, 0);
+										const isAfterCancelDate = cancelDate && dayDate > cancelDate;
+										
+										if (!isAfterCancelDate) {
 											const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
 											const quantity = pattern?.quantity || 0;
 											const unitPrice = contract.unitPrice || contract.product?.price || 0;
 											dayTotal += quantity * unitPrice;
-										});
-										return sum + dayTotal;
-									}, 0))}
+										}
+									});
+									return sum + dayTotal;
+								}, 0))}
 								</div>
 							</div>
 
@@ -1051,10 +1114,31 @@ export function CustomerDetailPage() {
 					)}
 					{contractOpsTab==='cancel' && selectedContractId && (
 						<div style={{ display: 'grid', gap: 8 }}>
-							<div>この契約を解約します。元に戻せません。よろしいですか？</div>
+							<div>この契約を解約します。解約日を指定してください。元に戻せません。</div>
+							<div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+								<label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+									解約日
+									<input 
+										type="date" 
+										value={cancelForm.cancelDate ?? ''} 
+										onChange={(e)=> setCancelForm(prev=>({ ...prev, cancelDate: e.target.value }))} 
+										style={{ width: 130 }} 
+									/>
+								</label>
+							</div>
 							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
 								<button className="ghost" onClick={closeContractOps}>キャンセル</button>
-								<button onClick={submitCancel} style={{ backgroundColor: '#d32f2f', color: 'white' }}>解約する</button>
+								<button 
+									onClick={submitCancel} 
+									disabled={!cancelForm.cancelDate}
+									style={{ 
+										backgroundColor: !cancelForm.cancelDate ? '#ccc' : '#d32f2f', 
+										color: 'white',
+										cursor: !cancelForm.cancelDate ? 'not-allowed' : 'pointer'
+									}}
+								>
+									解約する
+								</button>
 							</div>
 						</div>
 					)}
