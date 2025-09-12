@@ -16,15 +16,35 @@ function withBase(path: string): string {
 
 export async function apiGet<T>(path: string): Promise<T> {
 	const res = await fetch(withBase(path));
+	
+	// レスポンスがJSONでない場合（HTMLエラーページなど）の処理
+	const contentType = res.headers.get('content-type');
+	if (!contentType || !contentType.includes('application/json')) {
+		throw new Error(`Expected JSON response but got ${contentType || 'unknown content type'}`);
+	}
+	
 	const json = (await res.json()) as ApiResponse<T>;
-	if (!res.ok || !json.success) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
+	if (!res.ok || !json.success) {
+		const errorMessage = json.error?.message ?? `Request failed: ${res.status}`;
+		throw new Error(errorMessage);
+	}
 	return json.data as T;
 }
 
 export async function apiGetWithHeaders<T>(path: string): Promise<{ data: T; total?: number }> {
 	const res = await fetch(withBase(path));
+	
+	// レスポンスがJSONでない場合（HTMLエラーページなど）の処理
+	const contentType = res.headers.get('content-type');
+	if (!contentType || !contentType.includes('application/json')) {
+		throw new Error(`Expected JSON response but got ${contentType || 'unknown content type'}`);
+	}
+	
 	const json = (await res.json()) as ApiResponse<T>;
-	if (!res.ok || !json.success) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
+	if (!res.ok || !json.success) {
+		const errorMessage = json.error?.message ?? `Request failed: ${res.status}`;
+		throw new Error(errorMessage);
+	}
 	const totalHeader = res.headers.get('X-Total-Count') || res.headers.get('x-total-count');
 	return { data: json.data as T, total: totalHeader ? Number(totalHeader) : undefined };
 }
@@ -32,8 +52,18 @@ export async function apiGetWithHeaders<T>(path: string): Promise<{ data: T; tot
 export async function apiJson<TReq, TRes>(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: TReq): Promise<TRes> {
 	const res = await fetch(withBase(path), { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
 	if (method === 'DELETE') return undefined as unknown as TRes;
+	
+	// レスポンスがJSONでない場合（HTMLエラーページなど）の処理
+	const contentType = res.headers.get('content-type');
+	if (!contentType || !contentType.includes('application/json')) {
+		throw new Error(`Expected JSON response but got ${contentType || 'unknown content type'}`);
+	}
+	
 	const json = (await res.json()) as ApiResponse<TRes>;
-	if (!res.ok || !json.success) throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
+	if (!res.ok || !json.success) {
+		const errorMessage = json.error?.message ?? `Request failed: ${res.status}`;
+		throw new Error(errorMessage);
+	}
 	return json.data as TRes;
 }
 

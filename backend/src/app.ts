@@ -19,6 +19,7 @@ import dashboardRouter from './routes/dashboard';
 import docsRouter from './routes/docs';
 import { pausesRouter } from './routes/contracts';
 import storesRouter from './routes/stores';
+import temporaryDeliveriesRouter from './routes/temporaryDeliveries';
 import { generateOpenApiDocument } from './openapi/schema';
 
 const app = express();
@@ -40,14 +41,15 @@ app.use('/api/products', productsRouter);
 app.use('/api/delivery-courses', deliveryCoursesRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/schedules', schedulesRouter);
+app.use('/api/customers/:id/temporary-deliveries', temporaryDeliveriesRouter);
 app.use('/api/customers/:id/contracts', contractsRouter);
 app.use('/api/customers/:id/delivery-patterns', patternsRouter);
 app.use('/api/customers/:id/contracts', patternChangesRouter);
+app.use('/api/customers/:id/contracts', pausesRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/customers/:id', customerDetailRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/stores', storesRouter);
-app.use('/api/customers/:id/contracts', pausesRouter);
 app.use('/docs', docsRouter);
 app.get('/docs.json', (_req, res) => {
   const doc = generateOpenApiDocument();

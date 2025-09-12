@@ -39,10 +39,9 @@ export function CustomerDetailPage() {
 	// 契約操作モーダル用の状態
 	const [contractOpsOpen, setContractOpsOpen] = React.useState(false);
 	const [selectedContractId, setSelectedContractId] = React.useState<number | null>(null);
-	const [contractOpsTab, setContractOpsTab] = React.useState<'add'|'pattern'|'pause'|'cancel'|'patternChange'>('pattern');
+	const [contractOpsTab, setContractOpsTab] = React.useState<'add'|'pause'|'cancel'|'patternChange'|'temporaryAdd'>('add');
 	const [allProducts, setAllProducts] = React.useState<any[]>([]);
 	const [addForm, setAddForm] = React.useState<{ productId?: number; startDate?: string; unitPrice?: number; days: Record<number, number> }>({ days: {0:0,1:0,2:0,3:0,4:0,5:0,6:0} });
-	const [patternForm, setPatternForm] = React.useState<Record<number, number>>({0:0,1:0,2:0,3:0,4:0,5:0,6:0});
 	const selectedContract = React.useMemo(()=> contracts.find((c:any)=>c.id===selectedContractId), [contracts, selectedContractId]);
 	const [pauseForm, setPauseForm] = React.useState<{ startDate?: string; endDate?: string }>({ startDate: undefined, endDate: undefined });
 	const [cancelForm, setCancelForm] = React.useState<{ cancelDate?: string }>({ cancelDate: undefined });
@@ -50,6 +49,34 @@ export function CustomerDetailPage() {
 		changeDate: undefined, 
 		patterns: {0:0,1:0,2:0,3:0,4:0,5:0,6:0} 
 	});
+	const [temporaryAddForm, setTemporaryAddForm] = React.useState<{ productId?: number; deliveryDate?: string; quantity?: number; unitPrice?: number }>({});
+	const [temporaryDeliveries, setTemporaryDeliveries] = React.useState<any[]>([]);
+	const [clickedCalendarDate, setClickedCalendarDate] = React.useState<Date | null>(null);
+	
+	// パターン変更タブが選択された時に、クリックした日付をデフォルトで設定
+	React.useEffect(() => {
+		if (contractOpsTab === 'patternChange' && clickedCalendarDate) {
+			const iso = toLocalYmd(clickedCalendarDate);
+			setPatternChangeForm(prev => ({ ...prev, changeDate: iso }));
+		}
+	}, [contractOpsTab, clickedCalendarDate]);
+	
+	// 商品追加タブが選択された時に、クリックした日付を開始日欄にデフォルトで設定
+	React.useEffect(() => {
+		if (contractOpsTab === 'add' && clickedCalendarDate) {
+			const iso = toLocalYmd(clickedCalendarDate);
+			setAddForm(prev => ({ ...prev, startDate: iso }));
+		}
+	}, [contractOpsTab, clickedCalendarDate]);
+	
+	// 臨時商品追加タブが選択された時に、クリックした日付を追加日欄にデフォルトで設定
+	React.useEffect(() => {
+		if (contractOpsTab === 'temporaryAdd' && clickedCalendarDate) {
+			const iso = toLocalYmd(clickedCalendarDate);
+			setTemporaryAddForm(prev => ({ ...prev, deliveryDate: iso }));
+		}
+	}, [contractOpsTab, clickedCalendarDate]);
+	
 	React.useEffect(() => {
 		const onMove = (e: MouseEvent) => {
 			if (!sidebarDragRef.current.isDragging) return;
@@ -143,8 +170,8 @@ export function CustomerDetailPage() {
 
 			setContracts(contractsArray);
 			
-			// カレンダーデータを生成
-			generateCalendarData(contractsArray);
+		// カレンダーデータを生成
+		generateCalendarDataWithDate(contractsArray, new Date());
 			
 			// 請求履歴を取得
 			try {
@@ -152,6 +179,14 @@ export function CustomerDetailPage() {
 				setInvoiceHistory(historyData || []);
 			} catch (e) {
 				console.log('請求履歴の取得に失敗しました:', e);
+			}
+
+			// 臨時配達データを取得
+			try {
+				const tempDeliveries = await getDataTyped(`/api/customers/${customerId}/temporary-deliveries`) as any;
+				setTemporaryDeliveries(Array.isArray(tempDeliveries) ? tempDeliveries : (tempDeliveries?.data || []));
+			} catch (e) {
+				console.log('臨時配達データの取得に失敗しました:', e);
 			}
 			
 			// 配達コース一覧を取得
@@ -185,12 +220,12 @@ export function CustomerDetailPage() {
 		}
 	})().catch(()=>{}); }, [customerId]);
 
-	// 月が変わった時にカレンダーデータを再生成
+	// 月が変わった時やデータが更新された時にカレンダーデータを再生成
 	React.useEffect(() => {
 		if (contracts.length > 0) {
-			generateCalendarData(contracts);
+			generateCalendarDataWithDate(contracts, currentDate, temporaryDeliveries);
 		}
-	}, [currentDate, contracts]);
+	}, [currentDate, contracts, temporaryDeliveries]);
 
 	// 前半（日付行）の1セル幅を測定し、後半にも適用
 	React.useEffect(() => {
@@ -203,7 +238,7 @@ export function CustomerDetailPage() {
 	}, [calendarData, currentDate, contracts]);
 
 	// カレンダーデータ生成（指定された日付で）
-	const generateCalendarDataWithDate = (contractsData: any[], targetDate: Date) => {
+	const generateCalendarDataWithDate = (contractsData: any[], targetDate: Date, tempDeliveries: any[] = []) => {
 		const year = targetDate.getFullYear();
 		const month = targetDate.getMonth();
 		
@@ -275,6 +310,24 @@ export function CustomerDetailPage() {
 				}
 			});
 			
+			// 臨時配達を追加
+			tempDeliveries.forEach(tempDelivery => {
+				const tempDeliveryDate = new Date(tempDelivery.deliveryDate);
+				tempDeliveryDate.setHours(0, 0, 0, 0);
+				const currentDayDate = new Date(year, month, day);
+				currentDayDate.setHours(0, 0, 0, 0);
+				if (tempDeliveryDate.getTime() === currentDayDate.getTime()) {
+					deliveries.push({
+						contractId: null, // 臨時配達は契約IDなし
+						productName: tempDelivery.product?.name || '不明な商品',
+						quantity: tempDelivery.quantity,
+						unitPrice: tempDelivery.unitPrice || 0,
+						totalPrice: (tempDelivery.unitPrice || 0) * tempDelivery.quantity,
+						isTemporary: true // 臨時配達フラグ
+					});
+				}
+			});
+			
 			calendar.push({
 				day: day,
 				date: date,
@@ -288,11 +341,6 @@ export function CustomerDetailPage() {
 		setCalendarData(calendar);
 	};
 
-	// カレンダーデータ生成
-	const generateCalendarData = (contractsData: any[]) => {
-		generateCalendarDataWithDate(contractsData, currentDate);
-	};
-
 	// 月を変更
 	const changeMonth = (direction: number) => {
 		const newDate = new Date(currentDate);
@@ -300,7 +348,7 @@ export function CustomerDetailPage() {
 		setCurrentDate(newDate);
 		// 月変更時にカレンダーデータを再生成（新しい日付で）
 		if (contracts.length > 0) {
-			generateCalendarDataWithDate(contracts, newDate);
+			generateCalendarDataWithDate(contracts, newDate, temporaryDeliveries);
 		}
 	};
 
@@ -389,19 +437,15 @@ export function CustomerDetailPage() {
 	const openContractOps = async (contractId: number | null, clickedDate?: Date) => {
 		setSelectedContractId(contractId);
 		setContractOpsOpen(true);
-		// 初期タブはパターン変更
-		setContractOpsTab(contractId ? 'pattern' : 'add');
+		// クリックした日付を保存
+		setClickedCalendarDate(clickedDate || null);
+		// 初期タブは商品追加
+		setContractOpsTab('add');
 		// 製品リストのプリフェッチ
 		try { const prods = await getDataTyped<any[]>('/api/products'); setAllProducts(Array.isArray(prods)?prods:(prods as any)?.data??[]); } catch {}
-		// パターン初期値
-		if (contractId) {
-			const c = contracts.find(c=>c.id===contractId);
-			const init: Record<number, number> = {0:0,1:0,2:0,3:0,4:0,5:0,6:0};
-			c?.patterns?.forEach((p:any)=>{ init[p.dayOfWeek] = p.quantity||0; });
-			setPatternForm(init);
-		}
 		// 追加フォーム初期値
-		setAddForm({ days:{0:0,1:0,2:0,3:0,4:0,5:0,6:0}, startDate: toLocalYmd(new Date()), unitPrice: 0 });
+		const startDate = clickedDate ? toLocalYmd(clickedDate) : toLocalYmd(new Date());
+		setAddForm({ days:{0:0,1:0,2:0,3:0,4:0,5:0,6:0}, startDate: startDate, unitPrice: 0 });
 		const base = clickedDate ?? new Date();
 		const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
 		const iso = toLocalYmd(d);
@@ -428,9 +472,22 @@ export function CustomerDetailPage() {
 			}
 			
 			setContracts(contractsArray);
-			generateCalendarData(contractsArray);
+			generateCalendarDataWithDate(contractsArray, new Date());
 		} catch (error) {
 			console.error('契約データの取得に失敗しました:', error);
+		}
+	};
+
+	const reloadTemporaryDeliveries = async () => {
+		try {
+			const data = await getDataTyped<any[]>(`/api/customers/${customerId}/temporary-deliveries`);
+			setTemporaryDeliveries(data);
+			// カレンダーデータを再生成
+			if (contracts.length > 0) {
+				generateCalendarDataWithDate(contracts, currentDate, data);
+			}
+		} catch (error) {
+			console.error('臨時配達データの取得に失敗しました:', error);
 		}
 	};
 
@@ -458,28 +515,6 @@ export function CustomerDetailPage() {
 		} catch { toast.notify('error','商品追加に失敗しました'); }
 	};
 
-	const submitUpdatePatterns = async () => {
-		if (!selectedContractId) return;
-		try {
-			const c = contracts.find(c=>c.id===selectedContractId);
-			const current: Record<number, any> = {};
-			c?.patterns?.forEach((p:any)=>{ current[p.dayOfWeek]=p; });
-			for (let d=0; d<7; d++) {
-				const qty = Number(patternForm[d]||0);
-				const exist = current[d];
-				if (qty>0 && exist) {
-					await putDataTyped(`/api/customers/${customerId}/delivery-patterns/${exist.id}`, { quantity: qty });
-				} else if (qty>0 && !exist) {
-					await postDataTyped(`/api/customers/${customerId}/delivery-patterns`, { contractId: selectedContractId, dayOfWeek: d, quantity: qty });
-				} else if (qty===0 && exist) {
-					await deleteVoid(`/api/customers/${customerId}/delivery-patterns/${exist.id}`);
-				}
-			}
-			await reloadContracts();
-			setContractOpsOpen(false);
-			toast.notify('success','配達パターンを更新しました');
-		} catch { toast.notify('error','パターン更新に失敗しました'); }
-	};
 
 	const submitPause = async () => {
 		if (!selectedContractId) return;
@@ -523,6 +558,28 @@ export function CustomerDetailPage() {
 			toast.notify('success', `パターン変更を登録しました（変更日: ${patternChangeForm.changeDate}）`);
 		} catch {
 			toast.notify('error', 'パターン変更の登録に失敗しました');
+		}
+	};
+
+	const submitTemporaryAdd = async () => {
+		if (!temporaryAddForm.productId || !temporaryAddForm.deliveryDate || !temporaryAddForm.quantity) {
+			toast.notify('error', '商品、追加日、本数を入力してください');
+			return;
+		}
+		try {
+			await postDataTyped(`/api/customers/${customerId}/temporary-deliveries`, {
+				productId: temporaryAddForm.productId,
+				deliveryDate: temporaryAddForm.deliveryDate,
+				quantity: temporaryAddForm.quantity,
+				unitPrice: temporaryAddForm.unitPrice || 0
+			});
+			toast.notify('success', '臨時商品を追加しました');
+			closeContractOps();
+			await reloadContracts();
+			await reloadTemporaryDeliveries();
+		} catch (error) {
+			console.error('臨時商品追加エラー:', error);
+			toast.notify('error', '臨時商品の追加に失敗しました');
 		}
 	};
 
@@ -690,6 +747,35 @@ export function CustomerDetailPage() {
 									{/* 単価表示は非表示 */}
 								</div>
 							))}
+							
+							{/* 臨時配達商品名 */}
+							{temporaryDeliveries.map((tempDelivery: any) => (
+								<div key={`temp-name-${tempDelivery.id}`} style={{ 
+									padding: 0, 
+									border: '1px solid #ccc', 
+									height: '30px',
+									boxSizing: 'border-box',
+									display: 'flex',
+									flexDirection: 'column',
+									justifyContent: 'center',
+									backgroundColor: '#f8f9fa'
+								}}>
+									<div style={{ 
+										fontWeight: 'bold', 
+										fontSize: '14px', 
+										lineHeight: '14px', 
+										height: '14px', 
+										margin: 0, 
+										overflow: 'hidden', 
+										whiteSpace: 'nowrap', 
+										textOverflow: 'ellipsis', 
+										padding: '0 4px',
+										color: '#1976d2'
+									}}>
+										{tempDelivery.product?.name || '不明な商品'} (臨時)
+									</div>
+								</div>
+							))}
 							</div>
 						</div>
 
@@ -736,6 +822,7 @@ export function CustomerDetailPage() {
 													const contractDelivery = dayDeliveries.find(d => d.contractId === contract.id);
 													const quantity = contractDelivery ? contractDelivery.quantity : 0;
 													const hasDelivery = quantity > 0;
+													
 													return (
 														<div key={dayIndex} onClick={()=>openContractOps(contract.id, currentDayDate)} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: hasDelivery ? '#ffffcc' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'normal', cursor: 'pointer' }}>
 															{(() => {
@@ -750,8 +837,33 @@ export function CustomerDetailPage() {
 																});
 																// 配達本数がある日に限り「休」を表示
 																if (hasDelivery && paused) return <span style={{ color: '#d32f2f', fontSize: 14, fontWeight: 'bold' }}>休</span>;
+																
+																// 契約配達の本数を表示
 																return hasDelivery ? <span style={{ color: '#111', letterSpacing: '0.2px', fontFeatureSettings: '"tnum"', fontSize: '18px', lineHeight: 1 }}>{quantity}</span> : '';
 															})()}
+														</div>
+													);
+												})}
+											</div>
+										))}
+										
+										{/* 臨時配達商品の行 */}
+										{temporaryDeliveries.map((tempDelivery: any) => (
+											<div key={`temp-${tempDelivery.id}`} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`) }}>
+												{daysArr.map((dayData: any, dayIndex: number) => {
+													const currentDayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayData.day);
+													currentDayDate.setHours(0, 0, 0, 0);
+													const tempDeliveryDate = new Date(tempDelivery.deliveryDate);
+													tempDeliveryDate.setHours(0, 0, 0, 0);
+													const isTempDeliveryDay = tempDeliveryDate.getTime() === currentDayDate.getTime();
+													
+													return (
+														<div key={dayIndex} style={{ padding: 0, height: '30px', boxSizing: 'border-box', border: '1px solid #ccc', textAlign: 'center', backgroundColor: isTempDeliveryDay ? '#e3f2fd' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'normal' }}>
+															{isTempDeliveryDay ? (
+																<span style={{ color: '#1976d2', letterSpacing: '0.2px', fontFeatureSettings: '"tnum"', fontSize: '18px', lineHeight: 1, fontWeight: 'bold' }}>
+																	{tempDelivery.quantity}
+																</span>
+															) : ''}
 														</div>
 													);
 												})}
@@ -850,6 +962,24 @@ export function CustomerDetailPage() {
 									</div>
 								))}
 							</div>
+
+							{/* 臨時配達商品 */}
+							{temporaryDeliveries.length > 0 && (
+								<div>
+									<h4 style={{ margin: '0 0 8px 0', color: '#333' }}>臨時配達商品</h4>
+									{temporaryDeliveries.map((tempDelivery, index) => (
+										<div key={tempDelivery.id} style={{ fontSize: '11px', marginBottom: '8px', padding: '8px', backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '4px' }}>
+											<div style={{ fontWeight: 'bold', color: '#1976d2' }}>{tempDelivery.product?.name || '不明な商品'}</div>
+											<div style={{ color: '#666', marginLeft: '8px' }}>
+												<div>配達日: {new Date(tempDelivery.deliveryDate).toLocaleDateString('ja-JP')}</div>
+												<div>数量: {tempDelivery.quantity}{tempDelivery.product?.unit || '個'}</div>
+												<div>単価: {formatCurrency(tempDelivery.unitPrice || 0)}</div>
+												<div>合計: {formatCurrency((tempDelivery.unitPrice || 0) * tempDelivery.quantity)}</div>
+											</div>
+										</div>
+									))}
+								</div>
+							)}
 
 							{/* 月間合計 */}
 							<div>
@@ -1087,8 +1217,8 @@ export function CustomerDetailPage() {
 					)}
 					<div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
 						<button className={contractOpsTab==='add'?'' as any:'ghost'} onClick={()=>setContractOpsTab('add')}>商品追加</button>
-						<button className={contractOpsTab==='pattern'?'' as any:'ghost'} onClick={()=>setContractOpsTab('pattern')} disabled={!selectedContractId}>お届けパターン変更</button>
-						<button className={contractOpsTab==='patternChange'?'' as any:'ghost'} onClick={()=>setContractOpsTab('patternChange')} disabled={!selectedContractId}>期間指定パターン変更</button>
+						<button className={contractOpsTab==='temporaryAdd'?'' as any:'ghost'} onClick={()=>setContractOpsTab('temporaryAdd')}>臨時商品追加</button>
+						<button className={contractOpsTab==='patternChange'?'' as any:'ghost'} onClick={()=>setContractOpsTab('patternChange')} disabled={!selectedContractId}>パターン変更</button>
 						<button className={contractOpsTab==='pause'?'' as any:'ghost'} onClick={()=>setContractOpsTab('pause')} disabled={!selectedContractId}>休配</button>
 						<button className={contractOpsTab==='cancel'?'' as any:'ghost'} onClick={()=>setContractOpsTab('cancel')} disabled={!selectedContractId}>解約</button>
 					</div>
@@ -1120,19 +1250,34 @@ export function CustomerDetailPage() {
 							</div>
 						</div>
 					)}
-					{contractOpsTab==='pattern' && selectedContractId && (
+					{contractOpsTab==='temporaryAdd' && (
 						<div style={{ display: 'grid', gap: 8 }}>
-							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-								{['日','月','火','水','木','金','土'].map((d,idx)=> (
-									<label key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems:'center', fontSize: 12 }}>
-										<span>{d}</span>
-										<input type="number" min={0} value={patternForm[idx]??0} onChange={(e)=>setPatternForm(prev=>({ ...prev, [idx]: Number(e.target.value)||0 }))} style={{ width: 56 }} />
-									</label>
-								))}
-							</div>
+							<label>商品選択
+								<select value={temporaryAddForm.productId??''} onChange={(e)=>{
+									const productId = Number(e.target.value)||undefined;
+									const selectedProduct = allProducts.find(p => p.id === productId);
+									setTemporaryAddForm(prev=>({
+										...prev, 
+										productId: productId,
+										unitPrice: selectedProduct?.unitPrice || 0
+									}));
+								}}>
+									<option value="">選択してください</option>
+									{allProducts.map((p:any)=>(<option key={p.id} value={p.id}>{p.name}</option>))}
+								</select>
+							</label>
+							<label>追加日
+								<input type="date" value={temporaryAddForm.deliveryDate??''} onChange={(e)=>setTemporaryAddForm(prev=>({...prev, deliveryDate: e.target.value}))} />
+							</label>
+							<label>本数
+								<input type="number" min={1} value={temporaryAddForm.quantity??''} onChange={(e)=>setTemporaryAddForm(prev=>({...prev, quantity: Number(e.target.value)||undefined}))} />
+							</label>
+							<label>単価
+								<input type="number" min={0} value={temporaryAddForm.unitPrice??''} onChange={(e)=>setTemporaryAddForm(prev=>({...prev, unitPrice: Number(e.target.value)||undefined}))} />
+							</label>
 							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
 								<button className="ghost" onClick={closeContractOps}>閉じる</button>
-								<button onClick={submitUpdatePatterns}>保存</button>
+								<button onClick={submitTemporaryAdd}>追加</button>
 							</div>
 						</div>
 					)}

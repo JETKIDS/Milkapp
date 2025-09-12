@@ -111,6 +111,17 @@ export const reportsRepository = {
                   take: 1
                 }
               }
+            },
+            temporaryDeliveries: {
+              where: {
+                deliveryDate: {
+                  gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+                  lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+                }
+              },
+              include: {
+                product: true
+              }
             }
           }
         }
@@ -147,6 +158,17 @@ export const reportsRepository = {
               take: 1
             }
           }
+        },
+        temporaryDeliveries: {
+          where: {
+            deliveryDate: {
+              gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+              lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)
+            }
+          },
+          include: {
+            product: true
+          }
         }
       }
     });
@@ -169,7 +191,7 @@ export const reportsRepository = {
           console.log(`[DEBUG] Contract ${contract.id}: cancelDate=${contract.cancelDate}, isActive=${contract.isActive}, patterns=${contract.patterns.length}`);
         });
         
-        const deliveries = customer.contracts
+        const contractDeliveries = customer.contracts
           .filter(contract => {
             // 配達パターンがない場合は除外
             if (contract.patterns.length === 0) return false;
@@ -222,6 +244,18 @@ export const reportsRepository = {
               cancelled,
             } as any;
           });
+
+        // 臨時配達を追加
+        const temporaryDeliveries = customer.temporaryDeliveries.map(tempDelivery => ({
+          productName: tempDelivery.product.name,
+          quantity: tempDelivery.quantity,
+          unitPrice: tempDelivery.unitPrice,
+          paused: false,
+          cancelled: false,
+          isTemporary: true
+        }));
+
+        const deliveries = [...contractDeliveries, ...temporaryDeliveries];
 
         const hasAny = deliveries.length > 0;
         return hasAny ? {
