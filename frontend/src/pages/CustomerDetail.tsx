@@ -77,6 +77,20 @@ export function CustomerDetailPage() {
 		}
 	}, [contractOpsTab, clickedCalendarDate]);
 	
+	// 商品リストを読み込み
+	React.useEffect(() => {
+		const loadProducts = async () => {
+			try {
+				const prods = await getDataTyped<any[]>('/api/products');
+				const products = Array.isArray(prods) ? prods : (prods as any)?.data ?? [];
+				setAllProducts(products);
+			} catch (error) {
+				console.error('商品リストの取得に失敗しました:', error);
+			}
+		};
+		loadProducts();
+	}, []);
+
 	React.useEffect(() => {
 		const onMove = (e: MouseEvent) => {
 			if (!sidebarDragRef.current.isDragging) return;
@@ -441,11 +455,9 @@ export function CustomerDetailPage() {
 		setClickedCalendarDate(clickedDate || null);
 		// 初期タブは商品追加
 		setContractOpsTab('add');
-		// 製品リストのプリフェッチ
-		try { const prods = await getDataTyped<any[]>('/api/products'); setAllProducts(Array.isArray(prods)?prods:(prods as any)?.data??[]); } catch {}
 		// 追加フォーム初期値
 		const startDate = clickedDate ? toLocalYmd(clickedDate) : toLocalYmd(new Date());
-		setAddForm({ days:{0:0,1:0,2:0,3:0,4:0,5:0,6:0}, startDate: startDate, unitPrice: 0 });
+		setAddForm({ days:{0:0,1:0,2:0,3:0,4:0,5:0,6:0}, startDate: startDate });
 		const base = clickedDate ?? new Date();
 		const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
 		const iso = toLocalYmd(d);
@@ -731,7 +743,18 @@ export function CustomerDetailPage() {
 								商品名
 							</div>
 							<div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginTop: 0 }}>
-							{contracts.map((contract, index) => (
+							{contracts
+								.filter((contract: any) => {
+									// 解約日チェック：解約日が設定されている場合、現在の月が解約月より前かどうか
+									if (contract.cancelDate) {
+										const cancelDate = new Date(contract.cancelDate);
+										const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+										const cancelMonth = new Date(cancelDate.getFullYear(), cancelDate.getMonth(), 1);
+										return currentMonth <= cancelMonth;
+									}
+									return true;
+								})
+								.map((contract, index) => (
 								<div key={contract.id} style={{ 
 									padding: 0, 
 									border: '1px solid #ccc', 
@@ -748,8 +771,14 @@ export function CustomerDetailPage() {
 								</div>
 							))}
 							
-							{/* 臨時配達商品名 */}
-							{temporaryDeliveries.map((tempDelivery: any) => (
+							{/* 臨時配達商品名（現在の月のみ） */}
+							{temporaryDeliveries
+								.filter((tempDelivery: any) => {
+									const tempDeliveryDate = new Date(tempDelivery.deliveryDate);
+									return tempDeliveryDate.getFullYear() === currentDate.getFullYear() && 
+										   tempDeliveryDate.getMonth() === currentDate.getMonth();
+								})
+								.map((tempDelivery: any) => (
 								<div key={`temp-name-${tempDelivery.id}`} style={{ 
 									padding: 0, 
 									border: '1px solid #ccc', 
@@ -803,8 +832,19 @@ export function CustomerDetailPage() {
 												</div>
 											))}
 										</div>
-										{/* 各商品の配達数量行 */}
-										{contracts.map((contract: any) => (
+										{/* 各商品の配達数量行（解約月以降は非表示） */}
+										{contracts
+											.filter((contract: any) => {
+												// 解約日チェック：解約日が設定されている場合、現在の月が解約月より前かどうか
+												if (contract.cancelDate) {
+													const cancelDate = new Date(contract.cancelDate);
+													const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+													const cancelMonth = new Date(cancelDate.getFullYear(), cancelDate.getMonth(), 1);
+													return currentMonth <= cancelMonth;
+												}
+												return true;
+											})
+											.map((contract: any) => (
 											<div key={contract.id} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`) }}>
 												{daysArr.map((dayData: any, dayIndex: number) => {
 													const contractStartDate = new Date(contract.startDate);
@@ -847,8 +887,14 @@ export function CustomerDetailPage() {
 											</div>
 										))}
 										
-										{/* 臨時配達商品の行 */}
-										{temporaryDeliveries.map((tempDelivery: any) => (
+										{/* 臨時配達商品の行（現在の月のみ） */}
+										{temporaryDeliveries
+											.filter((tempDelivery: any) => {
+												const tempDeliveryDate = new Date(tempDelivery.deliveryDate);
+												return tempDeliveryDate.getFullYear() === currentDate.getFullYear() && 
+													   tempDeliveryDate.getMonth() === currentDate.getMonth();
+											})
+											.map((tempDelivery: any) => (
 											<div key={`temp-${tempDelivery.id}`} style={{ display: 'grid', gridTemplateColumns: (isSecondHalf && dayCellWidth ? `repeat(${daysArr.length}, ${dayCellWidth}px)` : `repeat(${daysArr.length}, 1fr)`) }}>
 												{daysArr.map((dayData: any, dayIndex: number) => {
 													const currentDayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayData.day);
@@ -918,10 +964,21 @@ export function CustomerDetailPage() {
 						backgroundColor: '#f0f8ff'
 					}}>
 						<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '16px' }}>
-							{/* 商品別サマリー */}
+							{/* 商品別サマリー（解約月以降は非表示） */}
 							<div>
 								<h4 style={{ margin: '0 0 8px 0', color: '#333' }}>商品別月間合計</h4>
-								{contracts.map((contract, index) => {
+								{contracts
+									.filter((contract: any) => {
+										// 解約日チェック：解約日が設定されている場合、現在の月が解約月より前かどうか
+										if (contract.cancelDate) {
+											const cancelDate = new Date(contract.cancelDate);
+											const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+											const cancelMonth = new Date(cancelDate.getFullYear(), cancelDate.getMonth(), 1);
+											return currentMonth <= cancelMonth;
+										}
+										return true;
+									})
+									.map((contract, index) => {
 									const monthlyQuantity = calendarData.reduce((sum, day) => {
 										const pattern = contract.patterns?.find((p: any) => p.dayOfWeek === day.dayOfWeek);
 										const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day.day);
@@ -946,10 +1003,21 @@ export function CustomerDetailPage() {
 								})}
 							</div>
 
-							{/* 配達パターン */}
+							{/* 配達パターン（解約月以降は非表示） */}
 							<div>
 								<h4 style={{ margin: '0 0 8px 0', color: '#333' }}>配達パターン</h4>
-								{contracts.map((contract, index) => (
+								{contracts
+									.filter((contract: any) => {
+										// 解約日チェック：解約日が設定されている場合、現在の月が解約月より前かどうか
+										if (contract.cancelDate) {
+											const cancelDate = new Date(contract.cancelDate);
+											const currentMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+											const cancelMonth = new Date(cancelDate.getFullYear(), cancelDate.getMonth(), 1);
+											return currentMonth <= cancelMonth;
+										}
+										return true;
+									})
+									.map((contract, index) => (
 									<div key={contract.id} style={{ fontSize: '11px', marginBottom: '8px' }}>
 										<div style={{ fontWeight: 'bold' }}>{contract.product?.name}</div>
 										<div style={{ color: '#666', marginLeft: '8px' }}>
@@ -963,11 +1031,21 @@ export function CustomerDetailPage() {
 								))}
 							</div>
 
-							{/* 臨時配達商品 */}
-							{temporaryDeliveries.length > 0 && (
+							{/* 臨時配達商品（現在の月のみ） */}
+							{temporaryDeliveries.filter((tempDelivery: any) => {
+								const tempDeliveryDate = new Date(tempDelivery.deliveryDate);
+								return tempDeliveryDate.getFullYear() === currentDate.getFullYear() && 
+									   tempDeliveryDate.getMonth() === currentDate.getMonth();
+							}).length > 0 && (
 								<div>
 									<h4 style={{ margin: '0 0 8px 0', color: '#333' }}>臨時配達商品</h4>
-									{temporaryDeliveries.map((tempDelivery, index) => (
+									{temporaryDeliveries
+										.filter((tempDelivery: any) => {
+											const tempDeliveryDate = new Date(tempDelivery.deliveryDate);
+											return tempDeliveryDate.getFullYear() === currentDate.getFullYear() && 
+												   tempDeliveryDate.getMonth() === currentDate.getMonth();
+										})
+										.map((tempDelivery, index) => (
 										<div key={tempDelivery.id} style={{ fontSize: '11px', marginBottom: '8px', padding: '8px', backgroundColor: '#f8f9fa', border: '1px solid #e9ecef', borderRadius: '4px' }}>
 											<div style={{ fontWeight: 'bold', color: '#1976d2' }}>{tempDelivery.product?.name || '不明な商品'}</div>
 											<div style={{ color: '#666', marginLeft: '8px' }}>
@@ -1225,7 +1303,15 @@ export function CustomerDetailPage() {
 					{contractOpsTab==='add' && (
 						<div style={{ display: 'grid', gap: 8 }}>
 							<label>商品
-								<select value={addForm.productId??''} onChange={(e)=>setAddForm(prev=>({...prev, productId: Number(e.target.value)||undefined}))}>
+								<select value={addForm.productId??''} onChange={(e)=>{
+									const productId = Number(e.target.value)||undefined;
+									const selectedProduct = allProducts.find(p => p.id === productId);
+									setAddForm(prev=>({
+										...prev, 
+										productId: productId,
+										unitPrice: selectedProduct?.price || 0
+									}));
+								}}>
 									<option value="">選択してください</option>
 									{allProducts.map((p:any)=>(<option key={p.id} value={p.id}>{p.name}</option>))}
 								</select>
@@ -1234,7 +1320,7 @@ export function CustomerDetailPage() {
 								<input type="date" value={addForm.startDate??''} onChange={(e)=>setAddForm(prev=>({...prev, startDate: e.target.value}))} />
 							</label>
 							<label>単価
-								<input type="number" value={addForm.unitPrice??0} onChange={(e)=>setAddForm(prev=>({...prev, unitPrice: Number(e.target.value)||0}))} />
+								<input type="number" value={addForm.unitPrice??0} onChange={(e)=>setAddForm(prev=>({...prev, unitPrice: Number(e.target.value)||0}))} placeholder="商品を選択すると自動入力されます" />
 							</label>
 							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
 								{['日','月','火','水','木','金','土'].map((d,idx)=> (
@@ -1259,7 +1345,7 @@ export function CustomerDetailPage() {
 									setTemporaryAddForm(prev=>({
 										...prev, 
 										productId: productId,
-										unitPrice: selectedProduct?.unitPrice || 0
+										unitPrice: selectedProduct?.price || 0
 									}));
 								}}>
 									<option value="">選択してください</option>
@@ -1273,7 +1359,7 @@ export function CustomerDetailPage() {
 								<input type="number" min={1} value={temporaryAddForm.quantity??''} onChange={(e)=>setTemporaryAddForm(prev=>({...prev, quantity: Number(e.target.value)||undefined}))} />
 							</label>
 							<label>単価
-								<input type="number" min={0} value={temporaryAddForm.unitPrice??''} onChange={(e)=>setTemporaryAddForm(prev=>({...prev, unitPrice: Number(e.target.value)||undefined}))} />
+								<input type="number" min={0} value={temporaryAddForm.unitPrice??''} onChange={(e)=>setTemporaryAddForm(prev=>({...prev, unitPrice: Number(e.target.value)||undefined}))} placeholder="商品を選択すると自動入力されます" />
 							</label>
 							<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
 								<button className="ghost" onClick={closeContractOps}>閉じる</button>
